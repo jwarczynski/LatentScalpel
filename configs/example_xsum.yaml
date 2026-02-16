@@ -1,0 +1,96 @@
+# =============================================================================
+# Example Experiment Configuration — XSum fine-tuned GENIE
+# =============================================================================
+# This config drives the full Diffusion SAE pipeline:
+#   1. Load GENIE model + XSum dataset
+#   2. Collect residual-stream activations across diffusion timesteps
+#   3. Train one Top-K SAE per decoder layer
+#   4. Evaluate reconstruction quality and activation-patching loss impact
+#
+# Copy this file, fill in the checkpoint path below, and run:
+#   python main.py configs/example_xsum.yaml
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Model — GENIE checkpoint and architecture parameters.
+# ---------------------------------------------------------------------------
+
+# Path to the saved GENIE model weights (.pt file).
+# GENIE checkpoints are typically saved as CheckpointState dicts with a
+# "model_dict" key. Raw state dicts are also supported.
+# If you accidentally extracted the .pt archive, you can point this at the
+# extracted directory (it should contain data.pkl and data/).
+model_checkpoint_path: "GENIE_ckpt-XSum"
+
+# Model architecture: "transformer" for unconditional Diffusion_LM,
+# "s2s_CAT" for CrossAttention_Diffusion_LM (used for XSum summarisation).
+model_arch: "s2s_CAT"
+
+# GENIE model dimensions — these must match the checkpoint.
+# The released GENIE checkpoints use 128-dim channels (not 768).
+in_channel: 128
+model_channels: 128
+out_channel: 128
+vocab_size: 30522
+config_name: "bert-base-uncased"
+logits_mode: 1
+
+# Set to false when loading from a checkpoint (avoids re-downloading BERT
+# weights that will be overwritten anyway).
+init_pretrained: false
+
+# Set to "random" when loading from checkpoint — the checkpoint already
+# contains the trained embeddings.
+token_emb_type: "random"
+
+# Whether the checkpoint was trained with learned sigma.
+learn_sigma: false
+
+# Whether to freeze the passage encoder (s2s_CAT only).
+fix_encoder: false
+
+# ---------------------------------------------------------------------------
+# Dataset
+# ---------------------------------------------------------------------------
+
+dataset_name: "xsum"
+max_samples: 10000
+
+# ---------------------------------------------------------------------------
+# Device
+# ---------------------------------------------------------------------------
+
+device: "cuda:0"
+
+# ---------------------------------------------------------------------------
+# Diffusion process
+# ---------------------------------------------------------------------------
+
+diffusion_steps: 2000
+noise_schedule: "sqrt"
+
+# ---------------------------------------------------------------------------
+# Activation collection
+# ---------------------------------------------------------------------------
+
+diffusion_timesteps: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+collection_batch_size: 16
+
+# ---------------------------------------------------------------------------
+# SAE hyperparameters
+# ---------------------------------------------------------------------------
+
+sae_dictionary_size: 16384
+sae_top_k: 32
+sae_learning_rate: 0.0003
+sae_training_epochs: 5
+sae_batch_size: 256
+force_retrain: false
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+
+output_dir: "./experiments/run_001"
+random_seed: 42
+log_interval: 100
