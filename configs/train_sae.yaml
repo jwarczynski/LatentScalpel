@@ -1,0 +1,97 @@
+# =============================================================================
+# SAE Training Config
+# =============================================================================
+# Trains a Top-K SAE for a single decoder layer.
+# Use a Slurm job array to train multiple layers in parallel.
+#
+# Train a single layer:
+#   uv run python main.py train-sae configs/train_sae.yaml --layer_idx=1
+#
+# Train with limited samples (balanced across timesteps):
+#   uv run python main.py train-sae configs/train_sae.yaml --layer_idx=1 --max_samples=1000000
+#
+# Resume training from checkpoint:
+#   uv run python main.py train-sae configs/train_sae.yaml --layer_idx=1 \
+#       --resume_from=./experiments/sae_checkpoints/layer_01.ckpt
+#
+# Resume all layers via job array (auto-resolves layer_XX.ckpt per layer):
+#   uv run python main.py train-sae configs/train_sae.yaml \
+#       --layers 0 1 2 3 4 5 --submit --infra.cluster=slurm \
+#       --resume_from=./experiments/sae_checkpoints
+# =============================================================================
+
+# -- Input --------------------------------------------------------------------
+activation_dir: "./experiments/activations/xsum/train"
+
+# Separate activation dirs for val/test (collected from different dataset splits)
+# null -> no validation/test loop
+val_activation_dir: "./experiments/activations/xsum/validation"
+test_activation_dir: "./experiments/activations/xsum/test"
+
+# -- Layer selection (required) -----------------------------------------------
+layer_idx: 0
+
+# -- SAE architecture ---------------------------------------------------------
+expansion_factor: 16
+k_target: 32
+k_start_multiplier: 4.0
+k_anneal_fraction: 0.1
+
+# -- Training -----------------------------------------------------------------
+learning_rate: 0.0003
+batch_size: 4096
+max_epochs: 13
+
+# -- Dead feature handling ----------------------------------------------------
+dead_feature_window: 10000
+resample_dead_features: true
+
+# -- Sample limit -------------------------------------------------------------
+# null  -> use all activation samples (default)
+# <int> -> limit to this many samples, balanced equally across timesteps
+max_samples: 10000000
+
+# -- DataLoader performance ---------------------------------------------------
+num_workers: 3
+persistent_workers: true
+pin_memory: true
+matmul_precision: "high"
+
+# -- Checkpoint resume --------------------------------------------------------
+# Path to .ckpt file, or directory of layer_XX.ckpt files.
+# Can also be passed via CLI: --resume_from=path/to/ckpt
+resume_from: "./experiments/sae_checkpoints"
+
+# -- Best checkpoint tracking -------------------------------------------------
+save_best: true
+monitor_metric: "val/mse"
+monitor_mode: "min"
+
+# -- Hardware -----------------------------------------------------------------
+num_gpus: 1
+strategy: "auto"
+
+# -- Logging ------------------------------------------------------------------
+wandb_project: "genie-sae"
+wandb_run_name: null
+use_wandb: true  # set to false to use CSVLogger instead
+
+# -- Output -------------------------------------------------------------------
+output_dir: "./experiments/sae_checkpoints"
+random_seed: 42
+
+# -- Exca infra ---------------------------------------------------------------
+# Used when submitting via --submit flag.
+# cluster: null  -> run in current process (default)
+# cluster: local -> run in a dedicated subprocess
+# cluster: slurm -> submit to slurm
+infra:
+  version: "1"
+  folder: "./experiments/cache/training"
+  cluster: null
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 32
+  timeout_min: 2800
+  slurm_partition: plgrid-gpu-a100
+  slurm_constraint: null

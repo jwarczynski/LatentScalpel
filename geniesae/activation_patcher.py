@@ -6,14 +6,13 @@ import json
 import logging
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from geniesae.config import ExperimentConfig
 from geniesae.genie_model import DiffusionHelper
 from geniesae.sae import TopKSAE
 
@@ -43,7 +42,8 @@ class ActivationPatcher:
     Args:
         model: The GENIE model (unwrapped nn.Module).
         saes: Mapping from layer index to a trained :class:`TopKSAE`.
-        config: Experiment configuration.
+        config: Any config object with diffusion_steps, noise_schedule,
+            diffusion_timesteps, device, and output_dir attributes.
         layer_accessor: Callable returning NNsight envoy layer proxies.
     """
 
@@ -51,7 +51,7 @@ class ActivationPatcher:
         self,
         model: nn.Module,
         saes: dict[int, TopKSAE],
-        config: ExperimentConfig,
+        config: Any,
         layer_accessor: Callable | None = None,
     ) -> None:
         from nnsight import NNsight

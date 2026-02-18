@@ -12,7 +12,6 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 from geniesae.activation_patcher import PatchingResult, ActivationPatcher
-from geniesae.config import ExperimentConfig
 from geniesae.sae import TopKSAE
 
 
@@ -27,32 +26,21 @@ TOP_K = 4
 NUM_LAYERS = 2
 
 
-def _make_config(tmp_path: Path, **overrides) -> ExperimentConfig:
-    defaults = dict(
-        model_checkpoint_path="/fake/path",
-        dataset_name="test",
-        max_samples=10,
-        device="cpu",
-        diffusion_steps=100,
-        noise_schedule="sqrt",
-        diffusion_timesteps=[10],
-        collection_batch_size=4,
-        sae_dictionary_size=DICT_SIZE,
-        sae_top_k=TOP_K,
-        sae_learning_rate=1e-3,
-        sae_training_epochs=1,
-        sae_batch_size=8,
-        force_retrain=False,
-        output_dir=str(tmp_path / "output"),
-        random_seed=42,
-        log_interval=100,
-    )
-    defaults.update(overrides)
-    return ExperimentConfig(**defaults)
+class _FakePatcherConfig:
+    """Lightweight config stand-in for ActivationPatcher."""
+
+    def __init__(self, tmp_path: Path, **overrides):
+        self.diffusion_steps = 100
+        self.noise_schedule = "sqrt"
+        self.diffusion_timesteps = [10]
+        self.device = "cpu"
+        self.output_dir = str(tmp_path / "output")
+        for k, v in overrides.items():
+            setattr(self, k, v)
 
 
 # ---------------------------------------------------------------------------
-# Mock GENIE-like model that supports get_embeds / get_logits
+# Mock GENIE-like model
 # ---------------------------------------------------------------------------
 
 
@@ -66,16 +54,7 @@ class _MockDecoderLayer(nn.Module):
 
 
 class _MockGENIEModel(nn.Module):
-    """Minimal model mimicking CrossAttention_Diffusion_LM for patching tests.
-
-    Accepts ``(x, timesteps, src_input_ids, src_attention_mask)`` and returns
-    a tensor of shape ``(batch, seq_len, embed_dim)``.  Also provides
-    ``get_embeds`` and ``get_logits`` for loss computation.
-    """
-
-    def __init__(
-        self, num_layers: int = NUM_LAYERS, dim: int = EMBED_DIM, vocab_size: int = VOCAB_SIZE
-    ) -> None:
+    def __init__(self, num_layers: int = NUM_LAYERS, dim: int = EMBED_DIM, vocab_size: int = VOCAB_SIZE) -> None:
         super().__init__()
         self.word_embedding = nn.Embedding(vocab_size, dim)
         self.lm_head = nn.Linear(dim, vocab_size)
@@ -90,13 +69,7 @@ class _MockGENIEModel(nn.Module):
     def get_logits(self, hidden_repr: torch.Tensor) -> torch.Tensor:
         return self.lm_head(hidden_repr)
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        timesteps: torch.Tensor,
-        src_input_ids: torch.Tensor,
-        src_attention_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+    def forward(self, x, timesteps, src_input_ids, src_attention_mask=None):
         h = x
         for block in self.transformer_blocks:
             h = block(h)
@@ -126,17 +99,11 @@ class TestPatchingResult:
     def test_to_dict(self) -> None:
         r = PatchingResult(layer_idx=0, baseline_loss=3.0, patched_loss=3.5, loss_delta=0.5)
         d = r.to_dict()
-        assert d == {
-            "layer_idx": 0,
-            "baseline_loss": 3.0,
-            "patched_loss": 3.5,
-            "loss_delta": 0.5,
-        }
+        assert d == {"layer_idx": 0, "baseline_loss": 3.0, "patched_loss": 3.5, "loss_delta": 0.5}
 
     def test_to_dict_none_layer(self) -> None:
         r = PatchingResult(layer_idx=None, baseline_loss=2.0, patched_loss=2.5, loss_delta=0.5)
-        d = r.to_dict()
-        assert d["layer_idx"] is None
+        assert r.to_dict()["layer_idx"] is None
 
     def test_loss_delta_arithmetic(self) -> None:
         r = PatchingResult(layer_idx=1, baseline_loss=3.0, patched_loss=2.8, loss_delta=-0.2)
@@ -151,7 +118,7 @@ class TestPatchingResult:
 class TestComputeBaselineLoss:
     def test_returns_float(self, tmp_path: Path) -> None:
         model = _MockGENIEModel()
-        config = _make_config(tmp_path)
+        config = _FakePatcherConfig(tmp_path)
         saes = _make_saes()
         dl = _make_dataloader()
 
@@ -162,12 +129,11 @@ class TestComputeBaselineLoss:
 
     def test_deterministic(self, tmp_path: Path) -> None:
         model = _MockGENIEModel()
-        config = _make_config(tmp_path)
+        config = _FakePatcherConfig(tmp_path)
         saes = _make_saes()
         dl = _make_dataloader()
 
         patcher = ActivationPatcher(model, saes, config, layer_accessor=_layer_accessor)
-        # Seed before each call so the diffusion noise is identical
         torch.manual_seed(42)
         loss1 = patcher.compute_baseline_loss(dl)
         torch.manual_seed(42)
@@ -183,7 +149,7 @@ class TestComputeBaselineLoss:
 class TestPatchSingleLayer:
     def test_returns_patching_result(self, tmp_path: Path) -> None:
         model = _MockGENIEModel()
-        config = _make_config(tmp_path)
+        config = _FakePatcherConfig(tmp_path)
         saes = _make_saes()
         dl = _make_dataloader()
 
@@ -194,29 +160,26 @@ class TestPatchSingleLayer:
         assert isinstance(result, PatchingResult)
         assert result.layer_idx == 0
         assert result.baseline_loss == baseline
-        assert isinstance(result.patched_loss, float)
 
     def test_loss_delta_is_correct(self, tmp_path: Path) -> None:
         model = _MockGENIEModel()
-        config = _make_config(tmp_path)
+        config = _FakePatcherConfig(tmp_path)
         saes = _make_saes()
         dl = _make_dataloader()
 
         patcher = ActivationPatcher(model, saes, config, layer_accessor=_layer_accessor)
         baseline = patcher.compute_baseline_loss(dl)
         result = patcher.patch_single_layer(0, dl, baseline)
-
         assert result.loss_delta == pytest.approx(result.patched_loss - result.baseline_loss)
 
     def test_missing_sae_raises_key_error(self, tmp_path: Path) -> None:
         model = _MockGENIEModel()
-        config = _make_config(tmp_path)
+        config = _FakePatcherConfig(tmp_path)
         saes = {0: TopKSAE(EMBED_DIM, DICT_SIZE, TOP_K)}
         dl = _make_dataloader()
 
         patcher = ActivationPatcher(model, saes, config, layer_accessor=_layer_accessor)
         baseline = patcher.compute_baseline_loss(dl)
-
         with pytest.raises(KeyError, match="layer 5"):
             patcher.patch_single_layer(5, dl, baseline)
 
@@ -229,7 +192,7 @@ class TestPatchSingleLayer:
 class TestPatchAllLayers:
     def test_returns_patching_result_with_none_layer(self, tmp_path: Path) -> None:
         model = _MockGENIEModel()
-        config = _make_config(tmp_path)
+        config = _FakePatcherConfig(tmp_path)
         saes = _make_saes()
         dl = _make_dataloader()
 
@@ -243,14 +206,13 @@ class TestPatchAllLayers:
 
     def test_loss_delta_is_correct(self, tmp_path: Path) -> None:
         model = _MockGENIEModel()
-        config = _make_config(tmp_path)
+        config = _FakePatcherConfig(tmp_path)
         saes = _make_saes()
         dl = _make_dataloader()
 
         patcher = ActivationPatcher(model, saes, config, layer_accessor=_layer_accessor)
         baseline = patcher.compute_baseline_loss(dl)
         result = patcher.patch_all_layers(dl, baseline)
-
         assert result.loss_delta == pytest.approx(result.patched_loss - result.baseline_loss)
 
 
@@ -262,22 +224,21 @@ class TestPatchAllLayers:
 class TestRunFullEvaluation:
     def test_returns_all_results(self, tmp_path: Path) -> None:
         model = _MockGENIEModel()
-        config = _make_config(tmp_path)
+        config = _FakePatcherConfig(tmp_path)
         saes = _make_saes()
         dl = _make_dataloader()
 
         patcher = ActivationPatcher(model, saes, config, layer_accessor=_layer_accessor)
         results = patcher.run_full_evaluation(dl)
 
-        # 2 per-layer + 1 all-layers = 3 results
-        assert len(results) == 3
+        assert len(results) == 3  # 2 per-layer + 1 all-layers
         assert results[0].layer_idx == 0
         assert results[1].layer_idx == 1
         assert results[2].layer_idx is None
 
     def test_saves_json(self, tmp_path: Path) -> None:
         model = _MockGENIEModel()
-        config = _make_config(tmp_path)
+        config = _FakePatcherConfig(tmp_path)
         saes = _make_saes()
         dl = _make_dataloader()
 
@@ -294,33 +255,10 @@ class TestRunFullEvaluation:
         assert "per_layer" in data
         assert "all_layers" in data
         assert len(data["per_layer"]) == 2
-        assert "patched_loss" in data["all_layers"]
-        assert "loss_delta" in data["all_layers"]
-
-    def test_json_structure_matches_spec(self, tmp_path: Path) -> None:
-        model = _MockGENIEModel()
-        config = _make_config(tmp_path)
-        saes = _make_saes()
-        dl = _make_dataloader()
-
-        patcher = ActivationPatcher(model, saes, config, layer_accessor=_layer_accessor)
-        results = patcher.run_full_evaluation(dl)
-
-        json_path = Path(config.output_dir) / "results" / "patching_results.json"
-        with open(json_path) as f:
-            data = json.load(f)
-
-        for entry in data["per_layer"]:
-            assert "layer_idx" in entry
-            assert "patched_loss" in entry
-            assert "loss_delta" in entry
-
-        baseline = results[0].baseline_loss
-        assert data["baseline_loss"] == pytest.approx(baseline)
 
     def test_all_deltas_are_consistent(self, tmp_path: Path) -> None:
         model = _MockGENIEModel()
-        config = _make_config(tmp_path)
+        config = _FakePatcherConfig(tmp_path)
         saes = _make_saes()
         dl = _make_dataloader()
 

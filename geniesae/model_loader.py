@@ -1,10 +1,17 @@
-"""GENIE model and XSum dataset loading."""
+"""GENIE model and XSum dataset loading.
+
+All public functions accept any config object that has the required
+attributes (duck typing), so they work with ActivationCollectionConfig,
+EvaluationConfig, or any other Pydantic model that carries the same
+model fields.
+"""
 
 from __future__ import annotations
 
 import logging
 import warnings
 from pathlib import Path
+from typing import Any, Protocol
 
 import nnsight
 import torch
@@ -13,10 +20,27 @@ from datasets import load_dataset
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
-from geniesae.config import ExperimentConfig
 from geniesae.genie_model import Diffusion_LM, CrossAttention_Diffusion_LM
 
 logger = logging.getLogger("geniesae.model_loader")
+
+
+class _ModelConfig(Protocol):
+    """Structural protocol for any config that carries GENIE model fields."""
+
+    model_checkpoint_path: str
+    model_arch: str
+    in_channel: int
+    model_channels: int
+    out_channel: int
+    vocab_size: int
+    config_name: str
+    logits_mode: int
+    init_pretrained: bool
+    token_emb_type: str
+    learn_sigma: bool
+    fix_encoder: bool
+    device: str
 
 
 def _resolve_device(requested: str) -> torch.device:
@@ -34,7 +58,7 @@ def _resolve_device(requested: str) -> torch.device:
     return torch.device(requested)
 
 
-def _create_genie_model(config: ExperimentConfig) -> nn.Module:
+def _create_genie_model(config: Any) -> nn.Module:
     """Instantiate the GENIE model from config parameters (no weights loaded yet)."""
     out_channels = config.out_channel if not config.learn_sigma else config.out_channel * 2
 
@@ -68,18 +92,12 @@ def _create_genie_model(config: ExperimentConfig) -> nn.Module:
 
 
 def load_genie_model(
-    config: ExperimentConfig,
+    config: Any,
 ) -> tuple[nn.Module, PreTrainedTokenizer]:
     """Load GENIE model weights onto the configured device.
 
-    Instantiates the GENIE model architecture from ``config`` parameters,
-    then loads pretrained weights from ``config.model_checkpoint_path``.
-    The checkpoint may be either a raw state dict or a GENIE
-    ``CheckpointState`` dict with a ``model_dict`` key.
-
-    The model is placed on the device specified in *config* (with automatic
-    CPU fallback when CUDA is requested but unavailable), then wrapped with
-    :class:`nnsight.NNsight` for tracing support.
+    Accepts any config object with the standard model fields
+    (model_checkpoint_path, model_arch, device, config_name, etc.).
 
     Returns:
         A tuple of ``(nnsight_model, tokenizer)``.
@@ -98,12 +116,7 @@ def load_genie_model(
     logger.info("Creating GENIE model (arch=%s)", config.model_arch)
     model = _create_genie_model(config)
 
-    # Resolve the actual file to load.  GENIE checkpoints downloaded from
-    # Google Drive are PyTorch zip archives.  If the user accidentally
-    # extracted the archive, the result is a directory containing
-    # ``data.pkl``, ``data/``, and ``version``.  We detect this layout and
-    # load ``data.pkl`` directly via ``pickle`` so the user doesn't have to
-    # re-download.
+    # Resolve the actual file to load.
     load_path: Path = checkpoint_path
     if checkpoint_path.is_dir():
         data_pkl = checkpoint_path / "data.pkl"
@@ -125,17 +138,12 @@ def load_genie_model(
     logger.info("Loading model checkpoint from %s", load_path)
 
     if load_path.name == "data.pkl":
-        # Load from extracted archive — need to set up the unpickler so it
-        # can find the tensor storage files in the sibling ``data/`` dir.
         import pickle
-        import io
 
         data_dir = load_path.parent / "data"
 
         class _DirectoryUnpickler(pickle.Unpickler):
-            """Unpickler that resolves persistent IDs from the ``data/`` dir."""
-
-            def persistent_load(self, saved_id):  # noqa: N802
+            def persistent_load(self, saved_id):
                 assert saved_id[0] == "storage"
                 storage_type, key, location, numel = saved_id[1:]
                 dtype = storage_type.dtype if hasattr(storage_type, "dtype") else torch.float32
@@ -147,7 +155,6 @@ def load_genie_model(
                     return torch.storage.TypedStorage(
                         wrap_storage=storage, dtype=dtype, _internal=True
                     )
-                # Fallback: return empty storage
                 return storage_type(numel)
 
         with open(load_path, "rb") as f:
@@ -157,12 +164,9 @@ def load_genie_model(
             load_path, map_location=device, weights_only=False
         )
 
-    # GENIE checkpoints are saved as CheckpointState namedtuples with a
-    # ``model_dict`` key.  Also support raw state dicts for flexibility.
     if isinstance(checkpoint, dict) and "model_dict" in checkpoint:
         state_dict = checkpoint["model_dict"]
     elif hasattr(checkpoint, "model_dict"):
-        # namedtuple-style CheckpointState
         state_dict = checkpoint.model_dict
     elif isinstance(checkpoint, dict):
         state_dict = checkpoint
@@ -179,24 +183,14 @@ def load_genie_model(
 
     logger.info("Model placed on %s", device)
 
-    # Load tokenizer — GENIE uses bert-base-uncased
     tokenizer = AutoTokenizer.from_pretrained(config.config_name)
-
-    # Wrap with NNsight for tracing support
     nnsight_model = nnsight.NNsight(model)
 
     return nnsight_model, tokenizer
 
 
 def get_decoder_layers(model: nn.Module) -> nn.ModuleList:
-    """Return the decoder layer modules from a GENIE model.
-
-    For ``Diffusion_LM``: ``model.input_transformers.layer``
-    For ``CrossAttention_Diffusion_LM``: ``model.transformer_blocks``
-
-    This is the canonical way to identify which layers to hook for
-    activation collection and patching.
-    """
+    """Return the decoder layer modules from a GENIE model."""
     if isinstance(model, CrossAttention_Diffusion_LM):
         return model.transformer_blocks
     elif isinstance(model, Diffusion_LM):
@@ -206,56 +200,3 @@ def get_decoder_layers(model: nn.Module) -> nn.ModuleList:
             f"Cannot determine decoder layers for model type {type(model).__name__}. "
             "Expected Diffusion_LM or CrossAttention_Diffusion_LM."
         )
-
-
-def load_xsum_dataset(
-    config: ExperimentConfig, tokenizer: PreTrainedTokenizer
-) -> DataLoader:
-    """Load and tokenize the XSum dataset, returning a :class:`DataLoader`.
-
-    The dataset is limited to ``config.max_samples`` examples.  Texts are
-    tokenized with padding and truncation, and the resulting tensors are
-    wrapped in a :class:`TensorDataset` / :class:`DataLoader` with batch size
-    ``config.collection_batch_size``.
-    """
-    logger.info(
-        "Loading dataset '%s' (max_samples=%d)", config.dataset_name, config.max_samples
-    )
-    ds = load_dataset(config.dataset_name, split="train")
-
-    # Limit to max_samples
-    if config.max_samples < len(ds):
-        ds = ds.select(range(config.max_samples))
-
-    # Tokenize
-    logger.info("Tokenizing %d examples", len(ds))
-
-    # Ensure the tokenizer has a pad token
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    # ds["document"] returns a HuggingFace Column object — convert to a
-    # plain list[str] so the tokenizer accepts it.
-    texts: list[str] = list(ds["document"])
-
-    encodings = tokenizer(
-        texts,
-        padding=True,
-        truncation=True,
-        max_length=512,
-        return_tensors="pt",
-    )
-
-    dataset = TensorDataset(encodings["input_ids"], encodings["attention_mask"])
-    dataloader = DataLoader(
-        dataset,
-        batch_size=config.collection_batch_size,
-        shuffle=False,
-    )
-
-    logger.info(
-        "Created DataLoader with %d batches (batch_size=%d)",
-        len(dataloader),
-        config.collection_batch_size,
-    )
-    return dataloader

@@ -1,20 +1,181 @@
+"""CLI entry point for the GENIE SAE experiment pipeline.
+
+Subcommands:
+    collect-activations  - Collect activations from GENIE model
+    train-sae            - Train Top-K SAEs on stored activations
+    evaluate             - Evaluate SAE reconstruction impact
+
+Usage:
+    uv run python main.py collect-activations configs/activation_collection.yaml
+    uv run python main.py train-sae configs/train_sae.yaml --layer_idx=3
+    uv run python main.py train-sae configs/train_sae.yaml --layers 0 1 2 3 4 5 --submit --infra.cluster=slurm
+    uv run python main.py evaluate configs/evaluation.yaml
+
+All Exca configs support ``--infra.folder`` and ``--infra.cluster`` overrides
+via CLI args, enabling caching and slurm submission without editing config files.
+"""
+
+from __future__ import annotations
+
 import argparse
+import json
+import sys
 
-from geniesae.config import ExperimentConfig
-from geniesae.pipeline import PipelineRunner
+from exca import ConfDict
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Run the GENIE SAE training and evaluation pipeline."
+def _load_config_dict(path: str, overrides: list[str] | None = None) -> dict:
+    """Load a JSON/YAML config and merge CLI overrides via ConfDict."""
+    import yaml
+
+    with open(path) as f:
+        if path.endswith((".yaml", ".yml")):
+            data = yaml.safe_load(f)
+        else:
+            data = json.load(f)
+
+    cfdict = ConfDict(data)
+    if overrides:
+        cli_overrides = ConfDict.from_args(overrides)
+        cfdict.update(cli_overrides)
+
+    return dict(cfdict)
+
+
+def cmd_collect_activations(args: argparse.Namespace) -> None:
+    from geniesae.configs import ActivationCollectionConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = ActivationCollectionConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+        print(f"UID: {config.infra.uid()}")
+        if config.infra.uid_folder():
+            print(f"Folder: {config.infra.uid_folder()}")
+    else:
+        output_dir = config.apply()
+        print(f"Activations saved to: {output_dir}")
+
+
+def _submit_train_job_array(base_config, layers: list[int]) -> None:
+    """Submit a Slurm job array — one job per layer via exca's job_array.
+
+    When ``base_config.resume_from`` points to a directory, each job
+    gets its own ``layer_XX.ckpt`` path resolved automatically by
+    ``resolve_checkpoint_path()``.
+    """
+    with base_config.infra.job_array() as array:
+        for layer_idx in layers:
+            overrides: dict = {"layer_idx": layer_idx}
+            task = base_config.infra.clone_obj(overrides)
+            array.append(task)
+    print(f"Submitted job array for layers {layers}")
+    for task in array:
+        print(f"  layer {task.layer_idx}: status={task.infra.status()}")
+
+
+def _submit_train_single(config) -> None:
+    """Submit a single layer training job to Slurm (non-blocking)."""
+    config.infra.job()
+    print(f"Job submitted for layer {config.layer_idx}. Status: {config.infra.status()}")
+
+
+def _run_train_inline(config) -> None:
+    """Train a single layer SAE in the current process (blocking)."""
+    print(
+        f"[main] train-sae: activation_dir={config.activation_dir}, "
+        f"layer_idx={config.layer_idx}, output_dir={config.output_dir}",
+        flush=True,
     )
-    parser.add_argument("config", help="Path to experiment config YAML")
-    args = parser.parse_args()
+    ckpt_path = config.apply()
+    print(f"SAE checkpoint saved to: {ckpt_path}")
 
-    config = ExperimentConfig.from_yaml(args.config)
-    config.validate()
-    runner = PipelineRunner(config)
-    runner.run()
+
+def cmd_train_sae(args: argparse.Namespace) -> None:
+    from geniesae.configs import SAETrainingConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    layers = args.layers
+
+    # CLI --resume_from overrides config value
+    if args.resume_from is not None:
+        data["resume_from"] = args.resume_from
+
+    if args.submit and layers:
+        base_config = SAETrainingConfig(**{**data, "layer_idx": layers[0]})
+        _submit_train_job_array(base_config, layers)
+    elif args.submit:
+        _submit_train_single(SAETrainingConfig(**data))
+    else:
+        _run_train_inline(SAETrainingConfig(**data))
+
+
+def cmd_evaluate(args: argparse.Namespace) -> None:
+    from geniesae.configs import EvaluationConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = EvaluationConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+        print(f"UID: {config.infra.uid()}")
+    else:
+        results = config.apply()
+        print(f"Evaluation complete. Baseline loss: {results['baseline_loss']}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="GENIE SAE experiment pipeline")
+    subparsers = parser.add_subparsers(dest="command", help="Pipeline stage to run")
+
+    def _add_common_args(p: argparse.ArgumentParser) -> None:
+        p.add_argument("config", help="Path to JSON/YAML config file")
+        p.add_argument(
+            "--submit", action="store_true",
+            help="Submit job non-blocking via infra.job() instead of running inline",
+        )
+
+    p_collect = subparsers.add_parser(
+        "collect-activations", help="Collect activations from GENIE model",
+    )
+    _add_common_args(p_collect)
+    p_collect.set_defaults(func=cmd_collect_activations)
+
+    p_train = subparsers.add_parser(
+        "train-sae", help="Train a Top-K SAE for one or more layers",
+    )
+    p_train.add_argument("config", help="Path to JSON/YAML config file")
+    p_train.add_argument(
+        "--submit", action="store_true",
+        help="Submit job(s) non-blocking via exca infra instead of running inline",
+    )
+    p_train.add_argument(
+        "--layers", type=int, nargs="+", default=None,
+        help="Layer indices to train (used with --submit for job array). "
+             "Example: --layers 0 1 2 3 4 5",
+    )
+    p_train.add_argument(
+        "--resume_from", type=str, default=None,
+        help="Path to .ckpt file or directory of layer_XX.ckpt files to resume from.",
+    )
+    p_train.set_defaults(func=cmd_train_sae)
+
+    p_eval = subparsers.add_parser(
+        "evaluate", help="Evaluate SAE reconstruction impact",
+    )
+    _add_common_args(p_eval)
+    p_eval.set_defaults(func=cmd_evaluate)
+
+    args, overrides = parser.parse_known_args()
+    args.overrides = overrides if overrides else None
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
+    args.func(args)
 
 
 if __name__ == "__main__":

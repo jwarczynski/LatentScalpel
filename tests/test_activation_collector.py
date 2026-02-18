@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 
 from geniesae.activation_collector import ActivationStore, ActivationCollector
-from geniesae.config import ExperimentConfig
 
 
 # ---------------------------------------------------------------------------
@@ -36,8 +35,9 @@ class TestActivationStore:
         store = ActivationStore(str(tmp_path))
         act = torch.randn(4, 8)
         store.save_activations(layer_idx=0, timestep=100, batch_idx=0, activations=act)
+        store.flush_timestep(100)
 
-        pt_file = tmp_path / "layer_00" / "timestep_0100_batch_000.pt"
+        pt_file = tmp_path / "layer_00" / "timestep_0100.pt"
         assert pt_file.exists()
 
         loaded = torch.load(pt_file, map_location="cpu", weights_only=True)
@@ -49,14 +49,17 @@ class TestActivationStore:
         act2 = torch.randn(5, 8)
         store.save_activations(0, 100, 0, act1)
         store.save_activations(0, 100, 1, act2)
+        store.flush_timestep(100)
         store.save_metadata({"num_layers": 1, "activation_dim": 8, "timesteps": [100], "num_samples": 8})
 
         ds = store.get_layer_dataset(0)
         assert len(ds) == 8
-        assert torch.allclose(ds[0], act1[0])
-        assert torch.allclose(ds[2], act1[2])
-        assert torch.allclose(ds[3], act2[0])
-        assert torch.allclose(ds[7], act2[4])
+        # act1 and act2 are concatenated into a single file
+        expected = torch.cat([act1, act2], dim=0)
+        assert torch.allclose(ds[0], expected[0])
+        assert torch.allclose(ds[2], expected[2])
+        assert torch.allclose(ds[3], expected[3])
+        assert torch.allclose(ds[7], expected[7])
 
     def test_get_layer_dataset_missing_layer(self, tmp_path: Path) -> None:
         store = ActivationStore(str(tmp_path))
@@ -72,6 +75,7 @@ class TestActivationStore:
         store = ActivationStore(str(tmp_path))
         for layer in range(3):
             store.save_activations(layer, 100, 0, torch.randn(2, 16))
+        store.flush_timestep(100)
         store.save_metadata({"num_layers": 3, "activation_dim": 16, "timesteps": [100], "num_samples": 6})
 
         assert store.num_layers == 3
@@ -99,12 +103,6 @@ class _MockDecoderLayer(nn.Module):
 
 
 class _MockGENIEModel(nn.Module):
-    """Minimal model mimicking CrossAttention_Diffusion_LM's interface.
-
-    Has ``word_embedding``, ``get_embeds``, ``transformer_blocks``, and
-    accepts ``(x, timesteps, src_input_ids, src_attention_mask)`` in forward.
-    """
-
     def __init__(self, num_layers: int = 2, dim: int = EMBED_DIM, vocab_size: int = VOCAB_SIZE) -> None:
         super().__init__()
         self.word_embedding = nn.Embedding(vocab_size, dim)
@@ -116,17 +114,26 @@ class _MockGENIEModel(nn.Module):
     def get_embeds(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.word_embedding(input_ids)
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        timesteps: torch.Tensor,
-        src_input_ids: torch.Tensor,
-        src_attention_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+    def forward(self, x, timesteps, src_input_ids, src_attention_mask=None):
         h = x
         for block in self.transformer_blocks:
             h = block(h)
         return self.proj(h)
+
+
+# ---------------------------------------------------------------------------
+# Lightweight config stand-in for ActivationCollector
+# ---------------------------------------------------------------------------
+
+
+class _FakeCollectorConfig:
+    def __init__(self, tmp_path: Path, timesteps: list[int] | None = None):
+        self.diffusion_steps = 100
+        self.noise_schedule = "sqrt"
+        self.diffusion_timesteps = timesteps or [10, 20]
+        self.device = "cpu"
+        self.output_dir = str(tmp_path / "output")
+        self.log_interval = 1
 
 
 # ---------------------------------------------------------------------------
@@ -137,23 +144,7 @@ class _MockGENIEModel(nn.Module):
 class TestActivationCollector:
     """Smoke tests for ActivationCollector using a mock GENIE model."""
 
-    def _make_config(self, tmp_path: Path, timesteps: list[int] | None = None) -> ExperimentConfig:
-        return ExperimentConfig(
-            model_checkpoint_path="/fake/path",
-            dataset_name="test",
-            max_samples=10,
-            device="cpu",
-            diffusion_steps=100,
-            noise_schedule="sqrt",
-            diffusion_timesteps=timesteps or [10, 20],
-            collection_batch_size=4,
-            output_dir=str(tmp_path / "output"),
-            random_seed=42,
-            log_interval=1,
-        )
-
     def _make_dataloader(self, num_samples: int = 8, seq_len: int = 4) -> DataLoader:
-        """Create a dataloader yielding (input_ids, attention_mask) tuples."""
         input_ids = torch.randint(0, VOCAB_SIZE, (num_samples, seq_len))
         attention_mask = torch.ones(num_samples, seq_len, dtype=torch.long)
         return DataLoader(TensorDataset(input_ids, attention_mask), batch_size=4)
@@ -161,7 +152,7 @@ class TestActivationCollector:
     def test_collect_produces_store_with_correct_metadata(self, tmp_path: Path) -> None:
         num_layers = 2
         model = _MockGENIEModel(num_layers=num_layers)
-        config = self._make_config(tmp_path, timesteps=[10, 20])
+        config = _FakeCollectorConfig(tmp_path, timesteps=[10, 20])
         dl = self._make_dataloader()
 
         def accessor(nnsight_model):
@@ -179,7 +170,7 @@ class TestActivationCollector:
     def test_collect_creates_files_for_all_layers(self, tmp_path: Path) -> None:
         num_layers = 3
         model = _MockGENIEModel(num_layers=num_layers)
-        config = self._make_config(tmp_path, timesteps=[10])
+        config = _FakeCollectorConfig(tmp_path, timesteps=[10])
         dl = self._make_dataloader(num_samples=4)
 
         def accessor(nnsight_model):
@@ -198,7 +189,7 @@ class TestActivationCollector:
     def test_collect_layer_datasets_are_loadable(self, tmp_path: Path) -> None:
         num_layers = 2
         model = _MockGENIEModel(num_layers=num_layers)
-        config = self._make_config(tmp_path, timesteps=[10])
+        config = _FakeCollectorConfig(tmp_path, timesteps=[10])
         dl = self._make_dataloader(num_samples=6)
 
         def accessor(nnsight_model):

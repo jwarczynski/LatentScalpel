@@ -1,0 +1,38 @@
+# Activation collection for XSum validation split
+model_checkpoint_path: "GENIE_ckpt-XSum"
+model_arch: "s2s_CAT"
+in_channel: 128
+model_channels: 128
+out_channel: 128
+vocab_size: 30522
+config_name: "bert-base-uncased"
+logits_mode: 1
+init_pretrained: false
+token_emb_type: "random"
+learn_sigma: false
+fix_encoder: false
+
+dataset_name: "xsum"
+dataset_split: "validation"
+max_samples: 3000
+
+diffusion_steps: 2000
+noise_schedule: "sqrt"
+diffusion_timesteps: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+
+batch_size: 16
+output_dir: "./experiments/activations/xsum/validation"
+force_overwrite: false
+device: "cuda:0"
+random_seed: 42
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/collection_val"
+  cluster: null
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 64
+  timeout_min: 360
+  slurm_partition: plgrid-gpu-a100
+  slurm_constraint: null
