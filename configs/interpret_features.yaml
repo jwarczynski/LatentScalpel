@@ -25,7 +25,7 @@
 top_examples_path: "./experiments/top_examples/layer_00_top_examples.json"
 
 # -- LLM settings -------------------------------------------------------------
-llm_model: "meta-llama/Llama-3.1-8B-Instruct"
+llm_model: "Qwen/Qwen2.5-32B-Instruct-AWQ"
 
 # null -> offline mode (loads model locally via vllm.LLM)
 # URL  -> API mode (uses OpenAI-compatible HTTP API), e.g. "http://localhost:8000/v1"
