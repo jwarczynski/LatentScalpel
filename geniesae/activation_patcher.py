@@ -70,6 +70,8 @@ class ActivationPatcher:
         """Return NNsight envoy proxies for the decoder layers."""
         if self._layer_accessor is not None:
             return self._layer_accessor(self._nnsight_model)
+        if hasattr(self._nnsight_model, "transformer_blocks"):
+            return self._nnsight_model.transformer_blocks
         return self._nnsight_model.decoder.layers
 
     def _prepare_genie_inputs(self, batch, device: str):

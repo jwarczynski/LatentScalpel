@@ -137,3 +137,39 @@ class SAELightningModule(L.LightningModule):
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.sae.parameters(), lr=self.learning_rate)
+    @classmethod
+    def load_trained(cls, checkpoint_path: str, map_location: str = "cpu") -> "SAELightningModule":
+        """Load a trained SAE from a Lightning checkpoint.
+
+        Reconstructs the TopKSAE from saved state dict shapes, then loads
+        the full checkpoint. This avoids the ``load_from_checkpoint`` issue
+        where ``sae`` is excluded from ``save_hyperparameters``.
+
+        Args:
+            checkpoint_path: Path to the ``.ckpt`` file.
+            map_location: Device to map tensors to.
+
+        Returns:
+            Fully loaded SAELightningModule with trained weights.
+        """
+        ckpt = torch.load(checkpoint_path, map_location=map_location, weights_only=False)
+        state_dict = ckpt["state_dict"]
+
+        # Infer SAE architecture from saved weight shapes
+        # sae.W_enc shape: (dictionary_size, activation_dim)
+        w_enc = state_dict["sae.W_enc"]
+        dictionary_size, activation_dim = w_enc.shape
+
+        hparams = ckpt.get("hyper_parameters", {})
+        k_target = hparams.get("k_target", 32)
+
+        sae = TopKSAE(
+            activation_dim=activation_dim,
+            dictionary_size=dictionary_size,
+            k=k_target,
+        )
+
+        module = cls(sae=sae, **hparams)
+        module.load_state_dict(state_dict)
+        return module
+

@@ -1,14 +1,16 @@
 # =============================================================================
 # Evaluation Config
 # =============================================================================
-# Evaluates SAE reconstruction impact on model loss and generation quality.
+# Evaluates SAE reconstruction impact on model loss and perplexity.
+# Patches decoder layer activations with SAE reconstructions at each
+# diffusion timestep and measures the impact.
 #
 # Run:
 #   uv run python main.py evaluate configs/evaluation.yaml
 #
-# Override infra for slurm:
+# Submit to Slurm:
 #   uv run python main.py evaluate configs/evaluation.yaml \
-#       --infra.cluster=slurm --infra.gpus_per_node=1
+#       --submit --infra.cluster=slurm
 # =============================================================================
 
 # -- Model --------------------------------------------------------------------
@@ -25,24 +27,46 @@ token_emb_type: "random"
 learn_sigma: false
 fix_encoder: false
 
-# -- Input paths --------------------------------------------------------------
+# -- SAE checkpoints ---------------------------------------------------------
 sae_checkpoint_dir: "./experiments/sae_checkpoints"
-activation_dir: "./experiments/activations"
+
+# null -> auto-detect from available layer_XX_best.ckpt / layer_XX.ckpt files
+# [0]  -> evaluate only layer 0
+# [0, 1, 2] -> evaluate layers 0, 1, 2
+sae_layers: [0]
+
+# Prefer layer_XX_best.ckpt over layer_XX.ckpt when both exist
+prefer_best: true
 
 # -- Dataset ------------------------------------------------------------------
 dataset_name: "xsum"
-dataset_split: "train"
-max_samples: 1000
+dataset_split: "validation"
+max_samples: 500
 
 # -- Diffusion ----------------------------------------------------------------
 diffusion_steps: 2000
 noise_schedule: "sqrt"
-diffusion_timesteps: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+
+# Timesteps to evaluate at:
+#   - List of ints: [100, 500, 1000]  -> evaluate at those specific timesteps
+#   - "all"                           -> evaluate at every timestep (1 to 2000)
+#   - "all" + stride: 100             -> evaluate every 100th step: [100, 200, ..., 2000]
+diffusion_timesteps: "all"
+# diffusion_timestep_stride: 100
 
 # -- Evaluation ---------------------------------------------------------------
+# eval_mode: "single_step" or "iterative"
+#   single_step: independent per-timestep eval (noise clean input to level t)
+#   iterative:   full reverse diffusion chain t=T-1 → 0, measures impact
+#                of SAE patching on the entire denoising process
+eval_mode: "single_step"
 batch_size: 16
-num_generation_samples: 50
 device: "cuda:0"
+
+# -- Logging ------------------------------------------------------------------
+use_wandb: true
+wandb_project: "genie-sae"
+wandb_run_name: null  # auto-generated if null
 
 # -- Output -------------------------------------------------------------------
 output_dir: "./experiments/results"
@@ -55,6 +79,6 @@ infra:
   gpus_per_node: 1
   cpus_per_task: 4
   mem_gb: 32
-  timeout_min: 360
-  slurm_partition: null
+  timeout_min: 2800
+  slurm_partition: plgrid-gpu-a100
   slurm_constraint: null

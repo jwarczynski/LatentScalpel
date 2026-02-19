@@ -607,10 +607,13 @@ def get_named_beta_schedule(schedule_name: str, num_diffusion_timesteps: int):
 
 
 class DiffusionHelper:
-    """Minimal diffusion forward-process helper for activation collection.
+    """Diffusion forward and reverse process helper.
 
     Pre-computes the noise schedule so we can quickly produce noised
-    embeddings at any timestep via :meth:`q_sample`.
+    embeddings at any timestep via :meth:`q_sample`, and run the
+    reverse denoising chain via :meth:`p_sample`.
+
+    The model is assumed to predict ``x_0`` directly (not noise).
 
     Args:
         num_timesteps: Total number of diffusion steps (GENIE default: 2000).
@@ -621,15 +624,43 @@ class DiffusionHelper:
         betas = np.array(get_named_beta_schedule(schedule_name, num_timesteps), dtype=np.float64)
         alphas = 1.0 - betas
         alphas_cumprod = np.cumprod(alphas, axis=0)
+        alphas_cumprod_prev = np.append(1.0, alphas_cumprod[:-1])
 
         self.num_timesteps = num_timesteps
-        # Store as float32 tensors for GPU use
+
+        # Forward process
         self.sqrt_alphas_cumprod = torch.from_numpy(
             np.sqrt(alphas_cumprod)
         ).float()
         self.sqrt_one_minus_alphas_cumprod = torch.from_numpy(
             np.sqrt(1.0 - alphas_cumprod)
         ).float()
+
+        # Reverse process — posterior q(x_{t-1} | x_t, x_0)
+        # posterior_mean = coeff1 * x_0_pred + coeff2 * x_t
+        posterior_mean_coeff1 = (
+            betas * np.sqrt(alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+        )
+        posterior_mean_coeff2 = (
+            (1.0 - alphas_cumprod_prev) * np.sqrt(alphas) / (1.0 - alphas_cumprod)
+        )
+        posterior_variance = (
+            betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+        )
+
+        self.posterior_mean_coeff1 = torch.from_numpy(posterior_mean_coeff1).float()
+        self.posterior_mean_coeff2 = torch.from_numpy(posterior_mean_coeff2).float()
+        self.posterior_variance = torch.from_numpy(posterior_variance).float()
+        self.posterior_log_variance_clipped = torch.from_numpy(
+            np.log(np.maximum(posterior_variance, 1e-20))
+        ).float()
+
+    def _extract(self, schedule: torch.Tensor, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+        """Index into a schedule tensor and reshape for broadcasting."""
+        schedule = schedule.to(x.device)
+        dims_to_add = x.dim() - 1
+        shape = (-1,) + (1,) * dims_to_add
+        return schedule[t].reshape(shape)
 
     def q_sample(
         self,
@@ -650,15 +681,57 @@ class DiffusionHelper:
         if noise is None:
             noise = torch.randn_like(x_start)
 
-        # Move schedule tensors to the right device
-        sqrt_alpha = self.sqrt_alphas_cumprod.to(x_start.device)
-        sqrt_one_minus_alpha = self.sqrt_one_minus_alphas_cumprod.to(x_start.device)
-
-        # Index into schedule: shape (batch,) → (batch, 1, 1) for broadcasting
-        dims_to_add = x_start.dim() - 1
-        shape = (-1,) + (1,) * dims_to_add
-        sqrt_alpha_t = sqrt_alpha[t].reshape(shape)
-        sqrt_one_minus_alpha_t = sqrt_one_minus_alpha[t].reshape(shape)
+        sqrt_alpha_t = self._extract(self.sqrt_alphas_cumprod, t, x_start)
+        sqrt_one_minus_alpha_t = self._extract(self.sqrt_one_minus_alphas_cumprod, t, x_start)
 
         return sqrt_alpha_t * x_start + sqrt_one_minus_alpha_t * noise
+
+    def q_posterior_mean_variance(
+        self,
+        x_start_pred: torch.Tensor,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute posterior mean and variance q(x_{t-1} | x_t, x_0_pred).
+
+        Args:
+            x_start_pred: Model's prediction of x_0, shape ``(batch, seq, dim)``.
+            x_t: Current noised latents, shape ``(batch, seq, dim)``.
+            t: 1-D integer tensor of timestep indices, shape ``(batch,)``.
+
+        Returns:
+            Tuple of (posterior_mean, posterior_variance).
+        """
+        coeff1 = self._extract(self.posterior_mean_coeff1, t, x_t)
+        coeff2 = self._extract(self.posterior_mean_coeff2, t, x_t)
+        posterior_mean = coeff1 * x_start_pred + coeff2 * x_t
+        posterior_var = self._extract(self.posterior_variance, t, x_t)
+        return posterior_mean, posterior_var
+
+    def p_sample(
+        self,
+        x_start_pred: torch.Tensor,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+    ) -> torch.Tensor:
+        """Single reverse diffusion step: sample x_{t-1} given model output.
+
+        Uses the posterior q(x_{t-1} | x_t, x_0_pred) with the model's
+        x_0 prediction. At t=0, returns the mean (no noise added).
+
+        Args:
+            x_start_pred: Model's prediction of x_0.
+            x_t: Current noised latents.
+            t: 1-D integer tensor of timestep indices.
+
+        Returns:
+            Denoised latents x_{t-1}.
+        """
+        mean, var = self.q_posterior_mean_variance(x_start_pred, x_t, t)
+        noise = torch.randn_like(x_t)
+        # No noise at t=0
+        nonzero_mask = (t != 0).float()
+        dims_to_add = x_t.dim() - 1
+        nonzero_mask = nonzero_mask.reshape(-1, *([1] * dims_to_add))
+        return mean + nonzero_mask * torch.sqrt(var.clamp(min=1e-20)) * noise
 
