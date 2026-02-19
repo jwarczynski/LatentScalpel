@@ -42,6 +42,8 @@ def update_topk_heaps(
     row_offset: int,
     seq_len: int,
     timestep: int,
+    unique_examples: bool = True,
+    seen_examples: dict[int, dict[int, int]] | None = None,
 ) -> None:
     """Update per-feature min-heaps with activations from a batch of sparse codes.
 
@@ -59,6 +61,13 @@ def update_topk_heaps(
             tensor (used to compute ``example_id`` and ``token_position``).
         seq_len: Sequence length used during activation collection.
         timestep: The diffusion timestep these activations came from.
+        unique_examples: If True, keep only the highest-activation entry
+            per ``(feature, example_id)`` pair, guaranteeing ``top_k``
+            unique dataset examples per feature.
+        seen_examples: Mutable dict mapping ``feature_idx`` ->
+            ``{example_id: heap_index}``.  Required when
+            ``unique_examples=True``; ignored otherwise.  Callers must
+            create this once and pass it across all batches/timesteps.
     """
     # Iterate over rows; for each row inspect only its non-zero features.
     # This is efficient because sparse codes have exactly K non-zero entries
@@ -76,10 +85,37 @@ def update_topk_heaps(
             val = sparse_codes[local_idx, feat_idx].item()
             heap = heaps[feat_idx]
             entry = (val, example_id, timestep, token_pos)
-            if len(heap) < top_k:
-                heapq.heappush(heap, entry)
-            elif val > heap[0][0]:
-                heapq.heapreplace(heap, entry)
+
+            if unique_examples and seen_examples is not None:
+                feat_seen = seen_examples[feat_idx]
+                if example_id in feat_seen:
+                    # Already have this example — replace only if better
+                    old_idx = feat_seen[example_id]
+                    if old_idx < len(heap) and val > heap[old_idx][0]:
+                        # Remove old entry, push new one, rebuild heap
+                        heap[old_idx] = entry
+                        heapq.heapify(heap)
+                        # Update index mapping for all entries after heapify
+                        feat_seen.clear()
+                        for i, h_entry in enumerate(heap):
+                            feat_seen[h_entry[1]] = i
+                    continue
+                # New example_id for this feature
+                if len(heap) < top_k:
+                    feat_seen[example_id] = len(heap)
+                    heapq.heappush(heap, entry)
+                elif val > heap[0][0]:
+                    evicted = heapq.heapreplace(heap, entry)
+                    feat_seen.pop(evicted[1], None)
+                    # Rebuild index mapping after replacement
+                    feat_seen.clear()
+                    for i, h_entry in enumerate(heap):
+                        feat_seen[h_entry[1]] = i
+            else:
+                if len(heap) < top_k:
+                    heapq.heappush(heap, entry)
+                elif val > heap[0][0]:
+                    heapq.heapreplace(heap, entry)
 
 
 
@@ -99,6 +135,16 @@ class TopExamplesConfig(BaseModel):
     dataset_name: str = "xsum"
     dataset_split: str = "train"
     top_k: int = Field(default=20, gt=0)
+    unique_examples: bool = Field(
+        default=True,
+        description=(
+            "If True (default), each dataset example appears at most once "
+            "per feature in the top-K list (keeping the highest activation "
+            "across timesteps/tokens). Set to False to allow duplicates, "
+            "which reveals when the same example activates strongly at "
+            "multiple timesteps."
+        ),
+    )
     features: list[int] | None = Field(
         default=None,
         description="Subset of feature indices to process. None = all features.",
@@ -187,6 +233,11 @@ class TopExamplesConfig(BaseModel):
             f: [] for f in feature_indices
         }
 
+        # Track seen example_ids per feature for uniqueness enforcement
+        seen_examples: dict[int, dict[int, int]] | None = None
+        if self.unique_examples:
+            seen_examples = {f: {} for f in feature_indices}
+
         print(
             f"[TopExamples] Processing {len(timesteps_to_use)} timesteps, "
             f"{len(feature_indices)} features, top_k={self.top_k}",
@@ -252,6 +303,8 @@ class TopExamplesConfig(BaseModel):
                     row_offset=start,
                     seq_len=seq_len,
                     timestep=timestep,
+                    unique_examples=self.unique_examples,
+                    seen_examples=seen_examples,
                 )
 
             if (ts_idx + 1) % 5 == 0 or ts_idx == len(timesteps_to_use) - 1:
@@ -287,6 +340,7 @@ class TopExamplesConfig(BaseModel):
                 "activation_dim": activation_dim,
                 "timesteps_used": timesteps_to_use,
                 "seq_len": seq_len or 512,
+                "unique_examples": self.unique_examples,
             },
             "features": features_output,
         }

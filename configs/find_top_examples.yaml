@@ -28,6 +28,11 @@ dataset_split: "train"
 # -- Top-K selection ----------------------------------------------------------
 top_k: 30                  # number of top examples to keep per feature
 
+# true  -> each dataset example appears at most once per feature (default)
+# false -> allow duplicates across timesteps (useful to see if an example
+#          activates strongly at multiple noise levels)
+unique_examples: true
+
 # -- Feature / timestep filtering ---------------------------------------------
 # null -> process all features in the SAE dictionary
 # list -> restrict to specific feature indices, e.g. [0, 1, 2, 3, 4]
