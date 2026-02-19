@@ -1,7 +1,10 @@
 """Top-K Sparse Autoencoder model definition.
 
-Implements the Top-K SAE with:
-- Explicit W_enc, W_dec, b_enc, b_dec parameters
+Implements the Top-K SAE from Gao et al. (2024) "Scaling and evaluating
+sparse autoencoders" (arXiv:2406.04093):
+- Encoder: z = TopK(W_enc @ (x - b_dec))
+- Decoder: x_hat = W_dec @ z + b_dec
+- No ReLU — the TopK operation itself is the activation function
 - Decoder weight normalization (unit L2 ball projection)
 - K-annealing support via mutable _current_k
 - Data-driven initialization (b_dec = mean, W_enc = W_dec^T)
@@ -18,10 +21,11 @@ from torch import Tensor
 class TopKSAE(nn.Module):
     """Sparse Autoencoder with Top-K activation function.
 
-    Forward pass:
-        f = ReLU(W_enc @ (x - b_dec) + b_enc)
-        z = TopK(f, current_k)
-        x_hat = W_dec^T @ z + b_dec
+    From Gao et al. (2024), the TopK operation replaces ReLU as the
+    activation function, directly controlling sparsity:
+
+        z = TopK(W_enc @ (x - b_dec))
+        x_hat = W_dec @ z + b_dec
 
     Args:
         activation_dim: Dimensionality of the input activations.
@@ -36,9 +40,8 @@ class TopKSAE(nn.Module):
         self.k = k
         self._current_k = k  # Mutable, updated by k-annealing
 
-        # Encoder: W_enc @ (x - b_dec) + b_enc
+        # Encoder: TopK(W_enc @ (x - b_dec))
         self.W_enc = nn.Parameter(torch.empty(dictionary_size, activation_dim))
-        self.b_enc = nn.Parameter(torch.zeros(dictionary_size))
 
         # Decoder: W_dec @ z + b_dec  (W_dec shape: activation_dim x dictionary_size)
         self.W_dec = nn.Parameter(torch.empty(activation_dim, dictionary_size))
@@ -76,7 +79,7 @@ class TopKSAE(nn.Module):
     def encode(self, x: Tensor) -> Tensor:
         """Encode input and apply top-k sparsity.
 
-        f = ReLU(W_enc @ (x - b_dec) + b_enc), then TopK.
+        z = TopK(W_enc @ (x - b_dec))
 
         Args:
             x: Input tensor of shape (..., activation_dim).
@@ -85,9 +88,7 @@ class TopKSAE(nn.Module):
             Sparse tensor of shape (..., dictionary_size) with exactly
             _current_k non-zero entries along the last dimension.
         """
-        pre_act = F.relu(
-            F.linear(x - self.b_dec, self.W_enc, self.b_enc)
-        )
+        pre_act = F.linear(x - self.b_dec, self.W_enc)
         topk_values, topk_indices = torch.topk(pre_act, self._current_k, dim=-1)
         sparse_z = torch.zeros_like(pre_act)
         sparse_z.scatter_(-1, topk_indices, topk_values)

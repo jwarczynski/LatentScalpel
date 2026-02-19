@@ -170,6 +170,8 @@ class SAELightningModule(L.LightningModule):
         )
 
         module = cls(sae=sae, **hparams)
+        # Drop legacy b_enc from old checkpoints (removed in TopK SAE fix)
+        state_dict = {k: v for k, v in state_dict.items() if k != "sae.b_enc"}
         module.load_state_dict(state_dict)
         return module
 
