@@ -89,11 +89,15 @@ class EvaluationConfig(BaseModel):
     )
 
     def resolve_timesteps(self) -> list[int]:
-        """Resolve the timestep list, handling 'all' and stride."""
+        """Resolve the timestep list, handling 'all' and stride.
+
+        Timesteps are 0-indexed to match the diffusion schedule tensors
+        (valid range: 0 to diffusion_steps - 1).
+        """
         if isinstance(self.diffusion_timesteps, str):
             if self.diffusion_timesteps.lower() == "all":
                 stride = self.diffusion_timestep_stride or 1
-                return list(range(stride, self.diffusion_steps + 1, stride))
+                return list(range(0, self.diffusion_steps, stride))
             raise ValueError(
                 f"diffusion_timesteps must be 'all' or a list of ints, "
                 f"got {self.diffusion_timesteps!r}"
