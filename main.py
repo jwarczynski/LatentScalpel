@@ -4,12 +4,16 @@ Subcommands:
     collect-activations  - Collect activations from GENIE model
     train-sae            - Train Top-K SAEs on stored activations
     evaluate             - Evaluate SAE reconstruction impact
+    find-top-examples    - Find top-activating dataset examples per SAE feature
+    interpret-features   - Interpret SAE features via LLM-as-judge protocol
 
 Usage:
     uv run python main.py collect-activations configs/activation_collection.yaml
     uv run python main.py train-sae configs/train_sae.yaml --layer_idx=3
     uv run python main.py train-sae configs/train_sae.yaml --layers 0 1 2 3 4 5 --submit --infra.cluster=slurm
     uv run python main.py evaluate configs/evaluation.yaml
+    uv run python main.py find-top-examples configs/find_top_examples.yaml
+    uv run python main.py interpret-features configs/interpret_features.yaml
 
 All Exca configs support ``--infra.folder`` and ``--infra.cluster`` overrides
 via CLI args, enabling caching and slurm submission without editing config files.
@@ -127,6 +131,34 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
         print(f"Evaluation complete. Baseline loss: {results['baseline_loss']}")
 
 
+def cmd_find_top_examples(args: argparse.Namespace) -> None:
+    from geniesae.configs import TopExamplesConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    if args.features:
+        data["features"] = args.features
+    config = TopExamplesConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+    else:
+        config.apply()
+
+
+def cmd_interpret_features(args: argparse.Namespace) -> None:
+    from geniesae.configs import InterpretFeaturesConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    if args.features:
+        data["features"] = args.features
+    config = InterpretFeaturesConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+    else:
+        config.apply()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="GENIE SAE experiment pipeline")
     subparsers = parser.add_subparsers(dest="command", help="Pipeline stage to run")
@@ -168,6 +200,26 @@ def main() -> None:
     )
     _add_common_args(p_eval)
     p_eval.set_defaults(func=cmd_evaluate)
+
+    p_top = subparsers.add_parser(
+        "find-top-examples", help="Find top-activating dataset examples per SAE feature",
+    )
+    _add_common_args(p_top)
+    p_top.add_argument(
+        "--features", type=int, nargs="+", default=None,
+        help="Feature indices to process (default: all features)",
+    )
+    p_top.set_defaults(func=cmd_find_top_examples)
+
+    p_interp = subparsers.add_parser(
+        "interpret-features", help="Interpret SAE features via LLM-as-judge protocol",
+    )
+    _add_common_args(p_interp)
+    p_interp.add_argument(
+        "--features", type=int, nargs="+", default=None,
+        help="Feature indices to interpret (default: all features)",
+    )
+    p_interp.set_defaults(func=cmd_interpret_features)
 
     args, overrides = parser.parse_known_args()
     args.overrides = overrides if overrides else None
