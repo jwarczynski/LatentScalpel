@@ -67,6 +67,10 @@ device: "cuda:0"
 use_wandb: true
 wandb_project: "genie-sae"
 wandb_run_name: null  # auto-generated if null
+wandb_run_id: "r3i5t08j"  # resume crashed single_step run
+
+# -- Resume -------------------------------------------------------------------
+skip_timesteps: 720  # skip already-computed timesteps
 
 # -- Output -------------------------------------------------------------------
 output_dir: "./experiments/results"

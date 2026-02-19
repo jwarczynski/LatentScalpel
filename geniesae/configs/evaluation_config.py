@@ -115,6 +115,21 @@ class EvaluationConfig(BaseModel):
     use_wandb: bool = True
     wandb_project: str = "genie-sae"
     wandb_run_name: str | None = None
+    wandb_run_id: str | None = Field(
+        default=None,
+        description="WandB run ID to resume. Continues logging into the same run.",
+    )
+
+    # Resume (single_step mode only)
+    skip_timesteps: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of timesteps to skip from the beginning of the resolved "
+            "timestep list. Use when resuming a crashed single_step run."
+        ),
+    )
+
     # Output
     output_dir: str = "./experiments/results"
 
@@ -123,6 +138,7 @@ class EvaluationConfig(BaseModel):
 
     _exclude_from_cls_uid: tp.ClassVar[tuple[str, ...]] = (
         "device", "batch_size", "use_wandb", "wandb_project", "wandb_run_name",
+        "wandb_run_id", "skip_timesteps",
     )
 
     def _discover_sae_checkpoints(self) -> dict[int, str]:
@@ -248,6 +264,9 @@ class EvaluationConfig(BaseModel):
                     "batch_size": self.batch_size,
                 },
             )
+            if self.wandb_run_id:
+                wandb_kwargs["id"] = self.wandb_run_id
+                wandb_kwargs["resume"] = "must"
             wandb_run = wandb.init(**wandb_kwargs)
 
         # --- Run evaluation ---
@@ -255,6 +274,12 @@ class EvaluationConfig(BaseModel):
 
         # Resolve "all" / stride into concrete timestep list
         resolved_timesteps = self.resolve_timesteps()
+        if self.skip_timesteps > 0:
+            resolved_timesteps = resolved_timesteps[self.skip_timesteps:]
+            print(
+                f"[Eval] Skipping first {self.skip_timesteps} timesteps (resume)",
+                flush=True,
+            )
         print(
             f"[Eval] Evaluating {len(resolved_timesteps)} timesteps "
             f"(first={resolved_timesteps[0]}, last={resolved_timesteps[-1]})",
@@ -269,6 +294,7 @@ class EvaluationConfig(BaseModel):
         )
         results = evaluator.run(
             dataloader, wandb_run=wandb_run, eval_mode=self.eval_mode,
+            step_offset=self.skip_timesteps,
         )
 
         # --- Save results ---

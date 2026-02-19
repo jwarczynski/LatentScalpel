@@ -171,6 +171,7 @@ class Evaluator:
 
     def run_single_step(
         self, dataloader: DataLoader, wandb_run: Any | None = None,
+        step_offset: int = 0,
     ) -> dict:
         """Single-step evaluation across configured timesteps."""
         self._model.eval()
@@ -234,7 +235,7 @@ class Evaluator:
             agg_bl += bl
             per_ts.append(ts_r)
             if wandb_run is not None:
-                wandb_run.log(log_d, step=ts_idx)
+                wandb_run.log(log_d, step=step_offset + ts_idx)
 
         n_ts = len(timesteps)
         avg_bl = agg_bl / n_ts
@@ -526,6 +527,7 @@ class Evaluator:
         dataloader: DataLoader,
         wandb_run: Any | None = None,
         eval_mode: str = "single_step",
+        step_offset: int = 0,
     ) -> dict:
         """Run evaluation in the specified mode.
 
@@ -533,10 +535,11 @@ class Evaluator:
             dataloader: Evaluation data yielding (input_ids, attention_mask).
             wandb_run: Optional wandb run for logging.
             eval_mode: ``"single_step"`` or ``"iterative"``.
+            step_offset: WandB step offset for resuming single_step runs.
 
         Returns:
             Results dict.
         """
         if eval_mode == "iterative":
             return self.run_iterative(dataloader, wandb_run)
-        return self.run_single_step(dataloader, wandb_run)
+        return self.run_single_step(dataloader, wandb_run, step_offset=step_offset)

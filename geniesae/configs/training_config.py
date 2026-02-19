@@ -97,6 +97,15 @@ class SAETrainingConfig(BaseModel):
 
     wandb_project: str = "genie-sae"
     wandb_run_name: str | None = None
+    wandb_run_id: str | None = Field(
+        default=None,
+        description=(
+            "WandB run ID to resume logging into. Set this when resuming "
+            "training so metrics continue on the same run instead of "
+            "creating a new one. Find the ID in the WandB UI URL or "
+            "run overview."
+        ),
+    )
     use_wandb: bool = True
 
     output_dir: str = "./experiments/sae_checkpoints"
@@ -106,6 +115,7 @@ class SAETrainingConfig(BaseModel):
 
     _exclude_from_cls_uid: tp.ClassVar[tuple[str, ...]] = (
         "num_gpus", "strategy", "batch_size", "wandb_project", "wandb_run_name",
+        "wandb_run_id",
         "num_workers", "persistent_workers", "pin_memory", "matmul_precision",
     )
 
@@ -253,11 +263,15 @@ class SAETrainingConfig(BaseModel):
         run_name = self.wandb_run_name or f"layer_{self.layer_idx:02d}"
         if self.use_wandb:
             from pytorch_lightning.loggers import WandbLogger
-            pl_logger = WandbLogger(
+            wandb_kwargs: dict = dict(
                 project=self.wandb_project,
                 name=run_name,
                 save_dir=str(output_dir),
             )
+            if self.wandb_run_id:
+                wandb_kwargs["id"] = self.wandb_run_id
+                wandb_kwargs["resume"] = "must"
+            pl_logger = WandbLogger(**wandb_kwargs)
         else:
             from pytorch_lightning.loggers import CSVLogger
             pl_logger = CSVLogger(save_dir=str(output_dir), name=run_name)
