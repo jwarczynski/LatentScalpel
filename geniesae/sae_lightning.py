@@ -67,7 +67,6 @@ class SAELightningModule(L.LightningModule):
 
         # Compute metrics
         l0 = (z != 0).float().sum(dim=-1).mean()
-        dead_frac = (self.feature_activation_count == 0).float().mean()
 
         # Fraction of Variance Explained
         x_mean = x.mean(dim=0, keepdim=True)
@@ -78,14 +77,17 @@ class SAELightningModule(L.LightningModule):
         self.log("train/mse_loss", loss, prog_bar=True)
         self.log("train/fve", fve, prog_bar=True)
         self.log("train/l0_sparsity", l0)
-        self.log("train/dead_feature_fraction", dead_frac)
 
-        # Update dead feature tracking
+        # Update dead feature tracking — accumulate first, then report
+        # and reset only when the window is full. This avoids the spike
+        # to ~1.0 that happened when we read the counter right after a reset.
         active_features = (z != 0).any(dim=0)
         self.feature_activation_count += active_features.long()
         self.tokens_since_reset += x.shape[0]
 
         if self.tokens_since_reset >= self.dead_feature_window:
+            dead_frac = (self.feature_activation_count == 0).float().mean()
+            self.log("train/dead_feature_fraction", dead_frac)
             self.tokens_since_reset.zero_()
             self.feature_activation_count.zero_()
 

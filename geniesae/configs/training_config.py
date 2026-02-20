@@ -66,7 +66,7 @@ class SAETrainingConfig(BaseModel):
     batch_size: int = Field(default=4096, gt=0)
     max_epochs: int = Field(default=5, gt=0)
 
-    dead_feature_window: int = Field(default=10000, gt=0)
+    dead_feature_window: int = Field(default=1_000_000, gt=0)
     resample_dead_features: bool = True
 
     max_samples: int | None = Field(default=None, gt=0)

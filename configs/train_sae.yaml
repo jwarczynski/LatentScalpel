@@ -40,10 +40,10 @@ k_anneal_fraction: 0.1
 # -- Training -----------------------------------------------------------------
 learning_rate: 0.0003
 batch_size: 4096
-max_epochs: 13
+max_epochs: 15
 
 # -- Dead feature handling ----------------------------------------------------
-dead_feature_window: 10000
+dead_feature_window: 1000000
 resample_dead_features: true
 
 # -- Sample limit -------------------------------------------------------------
