@@ -33,7 +33,7 @@ sae_checkpoint_dir: "./experiments/sae_checkpoints"
 # null -> auto-detect from available layer_XX_best.ckpt / layer_XX.ckpt files
 # [0]  -> evaluate only layer 0
 # [0, 1, 2] -> evaluate layers 0, 1, 2
-sae_layers: [0]
+sae_layers: [1]
 
 # Prefer layer_XX_best.ckpt over layer_XX.ckpt when both exist
 prefer_best: true

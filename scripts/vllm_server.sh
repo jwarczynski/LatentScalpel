@@ -33,7 +33,7 @@ uv run python -m vllm.entrypoints.openai.api_server \
     --model "$MODEL" \
     --host 0.0.0.0 \
     --port 8000 \
-    --max-model-len 4096 \
+    --max-model-len 32768 \
     --gpu-memory-utilization 0.92 \
     --quantization awq \
     --enforce-eager \

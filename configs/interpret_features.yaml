@@ -22,7 +22,7 @@
 # =============================================================================
 
 # -- Input --------------------------------------------------------------------
-top_examples_path: "./experiments/top_examples/layer_00_top_examples.json"
+top_examples_path: "./experiments/top_examples/layer_01_top_examples.json"
 
 # -- LLM settings -------------------------------------------------------------
 llm_model: "Qwen/Qwen2.5-32B-Instruct-AWQ"
@@ -33,7 +33,7 @@ vllm_base_url: null
 
 # -- Inference parameters -----------------------------------------------------
 batch_size: 32              # batch size for LLM requests
-num_scoring_examples: 10    # total examples in the discrimination task
+num_scoring_examples: 20    # total examples in the discrimination task
 max_tokens_explanation: 256 # max tokens for explanation generation
 max_tokens_scoring: 128     # max tokens for scoring response
 temperature: 0.0            # deterministic generation
@@ -58,6 +58,6 @@ infra:
   gpus_per_node: 1
   cpus_per_task: 4
   mem_gb: 32
-  timeout_min: 2800
+  timeout_min: 180
   slurm_partition: plgrid-gpu-a100
   slurm_constraint: null
