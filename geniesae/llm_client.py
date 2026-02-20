@@ -36,7 +36,7 @@ class LLMClient:
             # API mode — lazy import openai
             from openai import OpenAI
 
-            self._client = OpenAI(base_url=base_url)
+            self._client = OpenAI(base_url=base_url, api_key="EMPTY")
             self._mode = "api"
             logger.info("LLMClient: API mode, base_url=%s, model=%s", base_url, model)
         else:
@@ -67,13 +67,21 @@ class LLMClient:
         prompts: list[list[dict]],
         max_tokens: int,
         temperature: float,
+        max_workers: int = 16,
     ) -> list[str]:
-        """Batched chat completions. Returns list of generated texts."""
+        """Batched chat completions. Returns list of generated texts.
+
+        In API mode, sends requests concurrently via a thread pool so
+        vLLM can batch them on the GPU (continuous batching).
+        """
         if self._mode == "api":
-            return [
-                self._generate_api(msgs, max_tokens, temperature)
-                for msgs in prompts
-            ]
+            from concurrent.futures import ThreadPoolExecutor
+
+            def _call(msgs: list[dict]) -> str:
+                return self._generate_api(msgs, max_tokens, temperature)
+
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                return list(pool.map(_call, prompts))
         return self._generate_offline(prompts, max_tokens, temperature)
 
     # ------------------------------------------------------------------
