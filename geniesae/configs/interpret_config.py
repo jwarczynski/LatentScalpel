@@ -48,6 +48,15 @@ class InterpretFeaturesConfig(BaseModel):
     top_examples_path: str = Field(min_length=1)
     llm_model: str = Field(min_length=1)
     vllm_base_url: str | None = None
+    vllm_kwargs: dict[str, tp.Any] = Field(
+        default_factory=lambda: {
+            "quantization": "awq",
+            "enforce_eager": True,
+            "max_model_len": 32768,
+            "gpu_memory_utilization": 0.92,
+        },
+        description="Extra kwargs passed to vllm.LLM() in offline mode.",
+    )
     batch_size: int = Field(default=32, gt=0)
     num_scoring_examples: int = Field(default=10, gt=0)
     features: list[int] | None = Field(
@@ -68,6 +77,7 @@ class InterpretFeaturesConfig(BaseModel):
     _exclude_from_cls_uid: tp.ClassVar[tuple[str, ...]] = (
         "batch_size",
         "vllm_base_url",
+        "vllm_kwargs",
     )
 
     @infra.apply
@@ -121,7 +131,7 @@ class InterpretFeaturesConfig(BaseModel):
         # ------------------------------------------------------------------
         # 3. Initialize LLM client
         # ------------------------------------------------------------------
-        llm = LLMClient(model=self.llm_model, base_url=self.vllm_base_url)
+        llm = LLMClient(model=self.llm_model, base_url=self.vllm_base_url, **self.vllm_kwargs)
 
         # ------------------------------------------------------------------
         # 4. Determine which features to interpret
@@ -155,153 +165,142 @@ class InterpretFeaturesConfig(BaseModel):
         dataset_size = len(dataset)
 
         # ------------------------------------------------------------------
-        # 5. Process each feature
+        # 5. Prepare per-feature data (prompts + scoring metadata)
         # ------------------------------------------------------------------
         results_features: dict[str, dict] = {}
 
-        for feat_idx, feat_key in enumerate(feature_keys):
-            top_entries = features_data.get(feat_key, [])
+        # Filter to active features and pre-compute everything needed
+        # before any LLM calls.
+        active_keys: list[str] = []
+        explanation_prompts: list[list[dict]] = []
+        # Per-feature scoring metadata, built now so we only need
+        # the explanation text to construct the scoring prompt later.
+        scoring_meta: list[dict] = []
 
+        def _truncate(text: str) -> str:
+            if len(text) > self.max_doc_chars:
+                return text[: self.max_doc_chars] + "..."
+            return text
+
+        for feat_key in feature_keys:
+            top_entries = features_data.get(feat_key, [])
             if not top_entries:
-                logger.info(
-                    "Feature %s has no top examples, skipping.", feat_key,
-                )
                 continue
 
-            # 5a. Retrieve top-example texts from dataset
+            # Retrieve and truncate top-example texts
             documents: list[str] = []
-            top_example_ids_for_feature: set[int] = set()
+            top_ids: set[int] = set()
             for entry in top_entries:
                 eid = entry["example_id"]
-                top_example_ids_for_feature.add(eid)
+                top_ids.add(eid)
                 if eid < dataset_size:
-                    documents.append(dataset[eid]["document"])
-                else:
-                    logger.warning(
-                        "example_id %d out of dataset range (%d), skipping",
-                        eid,
-                        dataset_size,
-                    )
+                    documents.append(_truncate(dataset[eid]["document"]))
 
             if not documents:
-                logger.info(
-                    "Feature %s: no valid documents found, skipping.", feat_key,
-                )
                 continue
 
-            # Truncate documents for prompt construction
-            documents = [
-                d[:self.max_doc_chars] + ("..." if len(d) > self.max_doc_chars else "")
-                for d in documents
+            explanation_prompts.append(build_explanation_prompt(documents))
+            active_keys.append(feat_key)
+
+            # Pre-build scoring data
+            num_act = min(len(top_entries), self.num_scoring_examples // 2)
+            num_non = self.num_scoring_examples - num_act
+
+            candidate_ids = [
+                i for i in range(dataset_size) if i not in top_ids
+            ]
+            non_act_ids = random.sample(
+                candidate_ids, min(num_non, len(candidate_ids)),
+            )
+
+            act_texts = [
+                _truncate(dataset[e["example_id"]]["document"])
+                for e in top_entries[:num_act]
+                if e["example_id"] < dataset_size
+            ]
+            non_act_texts = [
+                _truncate(dataset[eid]["document"]) for eid in non_act_ids
             ]
 
-            # 5b. Build explanation prompt and get explanation
-            explanation_prompt = build_explanation_prompt(documents)
-            explanation = llm.generate(
-                explanation_prompt,
+            items: list[tuple[str, bool]] = [
+                (t, True) for t in act_texts
+            ] + [(t, False) for t in non_act_texts]
+            random.shuffle(items)
+
+            scoring_meta.append({
+                "texts": [it[0] for it in items],
+                "ground_truth": {
+                    i + 1 for i, it in enumerate(items) if it[1]
+                },
+            })
+
+        num_active = len(active_keys)
+        print(
+            f"[InterpretFeatures] {num_active} active features, "
+            f"processing in batches of {self.batch_size}",
+            flush=True,
+        )
+
+        # ------------------------------------------------------------------
+        # 5b. Batched LLM calls: explanations then scoring
+        # ------------------------------------------------------------------
+        for batch_start in range(0, num_active, self.batch_size):
+            batch_end = min(batch_start + self.batch_size, num_active)
+            batch_keys = active_keys[batch_start:batch_end]
+            batch_exp_prompts = explanation_prompts[batch_start:batch_end]
+            batch_scoring_meta = scoring_meta[batch_start:batch_end]
+
+            # --- Explanation batch ---
+            explanations = llm.generate_batch(
+                batch_exp_prompts,
                 max_tokens=self.max_tokens_explanation,
                 temperature=self.temperature,
             )
 
-            # 5c. Select non-activating examples
-            # Use half activating, half non-activating (or as close as possible)
-            num_activating = min(
-                len(top_entries), self.num_scoring_examples // 2,
-            )
-            num_non_activating = self.num_scoring_examples - num_activating
-
-            # Build pool of candidate non-activating IDs (disjoint from top examples)
-            candidate_ids = [
-                i for i in range(dataset_size)
-                if i not in top_example_ids_for_feature
+            # --- Scoring batch ---
+            scoring_prompts = [
+                build_scoring_prompt(exp, sm["texts"])
+                for exp, sm in zip(explanations, batch_scoring_meta)
             ]
-            non_activating_ids = random.sample(
-                candidate_ids,
-                min(num_non_activating, len(candidate_ids)),
-            )
-
-            # Build scoring example lists
-            activating_entries = top_entries[:num_activating]
-            activating_texts = []
-            for entry in activating_entries:
-                eid = entry["example_id"]
-                if eid < dataset_size:
-                    activating_texts.append(dataset[eid]["document"])
-
-            non_activating_texts = [
-                dataset[eid]["document"] for eid in non_activating_ids
-            ]
-
-            # Truncate scoring texts
-            activating_texts = [
-                t[:self.max_doc_chars] + ("..." if len(t) > self.max_doc_chars else "")
-                for t in activating_texts
-            ]
-            non_activating_texts = [
-                t[:self.max_doc_chars] + ("..." if len(t) > self.max_doc_chars else "")
-                for t in non_activating_texts
-            ]
-
-            # 5d. Shuffle and track ground truth
-            # Each item: (text, is_activating)
-            scoring_items: list[tuple[str, bool]] = [
-                (t, True) for t in activating_texts
-            ] + [(t, False) for t in non_activating_texts]
-            random.shuffle(scoring_items)
-
-            scoring_texts = [item[0] for item in scoring_items]
-            # Ground truth: 1-based indices of activating examples
-            ground_truth_indices = {
-                i + 1
-                for i, item in enumerate(scoring_items)
-                if item[1]
-            }
-
-            total_scoring = len(scoring_texts)
-
-            # 5e. Build scoring prompt and get prediction
-            scoring_prompt = build_scoring_prompt(explanation, scoring_texts)
-            scoring_response = llm.generate(
-                scoring_prompt,
+            scoring_responses = llm.generate_batch(
+                scoring_prompts,
                 max_tokens=self.max_tokens_scoring,
                 temperature=self.temperature,
             )
 
-            # 5f. Parse response and compute score
-            predicted_indices = parse_scoring_response(
-                scoring_response, total_scoring,
+            # --- Parse and score ---
+            for i, feat_key in enumerate(batch_keys):
+                explanation = explanations[i]
+                gt = batch_scoring_meta[i]["ground_truth"]
+                total = len(batch_scoring_meta[i]["texts"])
+
+                predicted = parse_scoring_response(scoring_responses[i], total)
+
+                if predicted is None:
+                    logger.warning(
+                        "Feature %s: failed to parse scoring response: %r",
+                        feat_key, scoring_responses[i],
+                    )
+                    results_features[feat_key] = {
+                        "explanation": explanation,
+                        "interpretability_score": 0.0,
+                        "predicted_indices": None,
+                        "ground_truth_indices": sorted(gt),
+                    }
+                else:
+                    score = compute_interpretability_score(predicted, gt, total)
+                    results_features[feat_key] = {
+                        "explanation": explanation,
+                        "interpretability_score": score,
+                        "predicted_indices": sorted(predicted),
+                        "ground_truth_indices": sorted(gt),
+                    }
+
+            print(
+                f"[InterpretFeatures] Batch done: features "
+                f"{batch_start + 1}-{batch_end}/{num_active}",
+                flush=True,
             )
-
-            if predicted_indices is None:
-                # Parse failure
-                logger.warning(
-                    "Feature %s: failed to parse scoring response: %r",
-                    feat_key,
-                    scoring_response,
-                )
-                results_features[feat_key] = {
-                    "explanation": explanation,
-                    "interpretability_score": 0.0,
-                    "predicted_indices": None,
-                    "ground_truth_indices": sorted(ground_truth_indices),
-                }
-            else:
-                score = compute_interpretability_score(
-                    predicted_indices, ground_truth_indices, total_scoring,
-                )
-                results_features[feat_key] = {
-                    "explanation": explanation,
-                    "interpretability_score": score,
-                    "predicted_indices": sorted(predicted_indices),
-                    "ground_truth_indices": sorted(ground_truth_indices),
-                }
-
-            if (feat_idx + 1) % 10 == 0 or feat_idx == len(feature_keys) - 1:
-                print(
-                    f"[InterpretFeatures] Processed feature {feat_key} "
-                    f"({feat_idx + 1}/{len(feature_keys)})",
-                    flush=True,
-                )
 
         # ------------------------------------------------------------------
         # 6. Write results JSON
