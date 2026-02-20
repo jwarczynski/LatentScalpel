@@ -57,6 +57,11 @@ class InterpretFeaturesConfig(BaseModel):
     output_path: str = "./experiments/interpretation_results.json"
     max_tokens_explanation: int = Field(default=256, gt=0)
     max_tokens_scoring: int = Field(default=128, gt=0)
+    max_doc_chars: int = Field(
+        default=500,
+        gt=0,
+        description="Truncate each document to this many characters in prompts.",
+    )
     temperature: float = Field(default=0.0, ge=0.0)
     infra: exca.TaskInfra = exca.TaskInfra(version="1")
 
@@ -184,6 +189,12 @@ class InterpretFeaturesConfig(BaseModel):
                 )
                 continue
 
+            # Truncate documents for prompt construction
+            documents = [
+                d[:self.max_doc_chars] + ("..." if len(d) > self.max_doc_chars else "")
+                for d in documents
+            ]
+
             # 5b. Build explanation prompt and get explanation
             explanation_prompt = build_explanation_prompt(documents)
             explanation = llm.generate(
@@ -219,6 +230,16 @@ class InterpretFeaturesConfig(BaseModel):
 
             non_activating_texts = [
                 dataset[eid]["document"] for eid in non_activating_ids
+            ]
+
+            # Truncate scoring texts
+            activating_texts = [
+                t[:self.max_doc_chars] + ("..." if len(t) > self.max_doc_chars else "")
+                for t in activating_texts
+            ]
+            non_activating_texts = [
+                t[:self.max_doc_chars] + ("..." if len(t) > self.max_doc_chars else "")
+                for t in non_activating_texts
             ]
 
             # 5d. Shuffle and track ground truth
