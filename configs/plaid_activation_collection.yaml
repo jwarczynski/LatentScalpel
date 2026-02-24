@@ -1,0 +1,49 @@
+# =============================================================================
+# PLAID Activation Collection Config
+# =============================================================================
+# Collects transformer block activations from PLAID 1B diffusion model.
+#
+# Run:
+#   uv run python main.py collect-plaid-activations configs/plaid_activation_collection.yaml
+#
+# Submit to Slurm:
+#   uv run python main.py collect-plaid-activations configs/plaid_activation_collection.yaml \
+#       --submit --infra.cluster=slurm
+# =============================================================================
+
+# -- Model --------------------------------------------------------------------
+weights_path: "models/plaid/plaid1b_weights"
+dim: 2048
+embed_dim: 16
+n_blocks: 24
+n_heads: 32
+vocab_size: 32768
+gamma_0: -3.0
+gamma_1: 6.0
+
+# -- Dataset ------------------------------------------------------------------
+dataset_name: "openwebtext"
+dataset_split: "train"
+max_samples: 10000
+seq_len: 256
+
+# -- Diffusion sampling (continuous t in [0,1]) -------------------------------
+diffusion_t_values: [0.05, 0.15, 0.25, 0.35, 0.5, 0.65, 0.75, 0.85, 0.95]
+
+# -- Collection ---------------------------------------------------------------
+batch_size: 8
+output_dir: "./experiments/plaid_activations"
+force_overwrite: false
+device: "cuda:0"
+random_seed: 42
+
+# -- Exca infra ---------------------------------------------------------------
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_collection"
+  cluster: null
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 64
+  timeout_min: 720
+  slurm_partition: plgrid-gpu-a100

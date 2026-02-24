@@ -1,0 +1,56 @@
+# =============================================================================
+# PLAID Trajectory Feature Collection Config
+# =============================================================================
+# Runs PLAID's full denoising trajectory and records SAE feature activations
+# at each sampled timestep.
+#
+# Run:
+#   uv run python main.py collect-plaid-trajectory configs/plaid_trajectory.yaml
+#
+# Submit to Slurm:
+#   uv run python main.py collect-plaid-trajectory configs/plaid_trajectory.yaml \
+#       --submit --infra.cluster=slurm
+# =============================================================================
+
+# -- Model --------------------------------------------------------------------
+weights_path: "models/plaid/plaid1b_weights"
+dim: 2048
+embed_dim: 16
+n_blocks: 24
+n_heads: 32
+vocab_size: 32768
+gamma_0: -3.0
+gamma_1: 6.0
+
+# -- SAE ----------------------------------------------------------------------
+sae_checkpoint_dir: "./experiments/plaid_sae_checkpoints"
+layers: [0, 12, 23]
+
+# -- Dataset ------------------------------------------------------------------
+dataset_name: "openwebtext"
+dataset_split: "train"
+max_samples: 50
+seq_len: 256
+
+# -- Diffusion ----------------------------------------------------------------
+sampling_timesteps: 4096
+score_temp: 0.9
+timestep_subsample: 40  # record every 40th step -> ~102 timesteps
+
+# -- Collection ---------------------------------------------------------------
+batch_size: 2
+top_k_to_record: 64
+device: "cuda:0"
+random_seed: 42
+output_path: "./experiments/plaid_trajectory_features.json"
+
+# -- Exca infra ---------------------------------------------------------------
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_trajectory"
+  cluster: null
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 64
+  timeout_min: 1440
+  slurm_partition: plgrid-gpu-a100

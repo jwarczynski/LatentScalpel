@@ -185,6 +185,34 @@ def cmd_collect_trajectory(args: argparse.Namespace) -> None:
         print(f"Trajectory data saved to: {result}")
 
 
+def cmd_collect_plaid_activations(args: argparse.Namespace) -> None:
+    from geniesae.configs import PlaidCollectionConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = PlaidCollectionConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        result = config.apply()
+        print(f"PLAID activations saved to: {result}")
+
+
+def cmd_collect_plaid_trajectory(args: argparse.Namespace) -> None:
+    from geniesae.configs import PlaidTrajectoryConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = PlaidTrajectoryConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        result = config.apply()
+        print(f"PLAID trajectory data saved to: {result}")
+
+
 
 
 
@@ -262,6 +290,20 @@ def main() -> None:
     )
     _add_common_args(p_trajectory)
     p_trajectory.set_defaults(func=cmd_collect_trajectory)
+
+    p_plaid_collect = subparsers.add_parser(
+        "collect-plaid-activations",
+        help="Collect activations from PLAID diffusion model",
+    )
+    _add_common_args(p_plaid_collect)
+    p_plaid_collect.set_defaults(func=cmd_collect_plaid_activations)
+
+    p_plaid_traj = subparsers.add_parser(
+        "collect-plaid-trajectory",
+        help="Collect SAE feature activations along PLAID's denoising trajectory",
+    )
+    _add_common_args(p_plaid_traj)
+    p_plaid_traj.set_defaults(func=cmd_collect_plaid_trajectory)
 
     args, overrides = parser.parse_known_args()
     args.overrides = overrides if overrides else None
