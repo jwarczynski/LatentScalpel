@@ -22,6 +22,8 @@ from pathlib import Path
 import exca
 from pydantic import BaseModel, Field
 
+from geniesae.notify import notify_on_completion
+
 logger = logging.getLogger("geniesae.configs.evaluation")
 
 
@@ -190,6 +192,7 @@ class EvaluationConfig(BaseModel):
         return result
 
     @infra.apply
+    @notify_on_completion("evaluate")
     def apply(self) -> dict:
         """Run evaluation and return results dict."""
         import json

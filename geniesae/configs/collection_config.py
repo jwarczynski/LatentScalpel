@@ -11,6 +11,8 @@ from pathlib import Path
 import exca
 from pydantic import BaseModel, Field
 
+from geniesae.notify import notify_on_completion
+
 logger = logging.getLogger("geniesae.configs.collection")
 
 
@@ -60,6 +62,7 @@ class ActivationCollectionConfig(BaseModel):
     )
 
     @infra.apply
+    @notify_on_completion("collect-activations")
     def apply(self) -> str:
         """Collect activations and return the output directory path."""
         import torch

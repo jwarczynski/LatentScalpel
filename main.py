@@ -158,6 +158,20 @@ def cmd_interpret_features(args: argparse.Namespace) -> None:
     else:
         config.apply()
 
+def cmd_test_notify(args: argparse.Namespace) -> None:
+    from scripts.test_notify import NotifyTestConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = NotifyTestConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        result = config.apply()
+        print(f"Test result: {result}")
+
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GENIE SAE experiment pipeline")
@@ -220,6 +234,12 @@ def main() -> None:
         help="Feature indices to interpret (default: all features)",
     )
     p_interp.set_defaults(func=cmd_interpret_features)
+
+    p_test_notify = subparsers.add_parser(
+        "test-notify", help="Dummy job to test ntfy notifications (no GPU)",
+    )
+    _add_common_args(p_test_notify)
+    p_test_notify.set_defaults(func=cmd_test_notify)
 
     args, overrides = parser.parse_known_args()
     args.overrides = overrides if overrides else None

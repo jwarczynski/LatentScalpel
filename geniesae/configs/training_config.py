@@ -38,6 +38,8 @@ from pathlib import Path
 import exca
 from pydantic import BaseModel, Field
 
+from geniesae.notify import notify_on_completion
+
 logger = logging.getLogger("geniesae.configs.training")
 
 
@@ -161,6 +163,7 @@ class SAETrainingConfig(BaseModel):
         return None
 
     @infra.apply
+    @notify_on_completion("train-sae")
     def apply(self) -> str:
         """Train SAE for a single layer and return checkpoint path."""
         import torch

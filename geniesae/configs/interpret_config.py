@@ -25,6 +25,8 @@ from pathlib import Path
 import exca
 from pydantic import BaseModel, Field
 
+from geniesae.notify import notify_on_completion
+
 logger = logging.getLogger("geniesae.configs.interpret")
 
 
@@ -50,7 +52,7 @@ class InterpretFeaturesConfig(BaseModel):
     vllm_base_url: str | None = None
     vllm_kwargs: dict[str, tp.Any] = Field(
         default_factory=lambda: {
-            "quantization": "awq",
+            "quantization": "awq_marlin",
             "enforce_eager": True,
             "max_model_len": 32768,
             "gpu_memory_utilization": 0.92,
@@ -81,6 +83,7 @@ class InterpretFeaturesConfig(BaseModel):
     )
 
     @infra.apply
+    @notify_on_completion("interpret-features")
     def apply(self) -> str:
         """Run the interpretation pipeline. Returns the output file path."""
         from datasets import load_dataset

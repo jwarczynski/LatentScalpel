@@ -1,0 +1,12 @@
+sleep_seconds: 5
+should_fail: false
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/notify_test"
+  cluster: slurm
+  gpus_per_node: 0
+  cpus_per_task: 1
+  mem_gb: 4
+  timeout_min: 5
+  slurm_partition: plgrid-now

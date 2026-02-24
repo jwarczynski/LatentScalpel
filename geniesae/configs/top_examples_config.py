@@ -26,6 +26,8 @@ import exca
 import torch
 from pydantic import BaseModel, Field
 
+from geniesae.notify import notify_on_completion
+
 logger = logging.getLogger("geniesae.configs.top_examples")
 
 
@@ -167,6 +169,7 @@ class TopExamplesConfig(BaseModel):
     )
 
     @infra.apply
+    @notify_on_completion("find-top-examples")
     def apply(self) -> str:
         """Run top-examples discovery. Returns the output file path."""
         from geniesae.sae_lightning import SAELightningModule
