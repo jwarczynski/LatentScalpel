@@ -5,6 +5,7 @@ from geniesae.configs.training_config import SAETrainingConfig
 from geniesae.configs.evaluation_config import EvaluationConfig
 from geniesae.configs.top_examples_config import TopExamplesConfig
 from geniesae.configs.interpret_config import InterpretFeaturesConfig
+from geniesae.configs.trajectory_config import TrajectoryConfig
 
 __all__ = [
     "ActivationCollectionConfig",
@@ -12,4 +13,5 @@ __all__ = [
     "EvaluationConfig",
     "TopExamplesConfig",
     "InterpretFeaturesConfig",
+    "TrajectoryConfig",
 ]

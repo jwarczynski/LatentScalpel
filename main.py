@@ -171,6 +171,21 @@ def cmd_test_notify(args: argparse.Namespace) -> None:
         result = config.apply()
         print(f"Test result: {result}")
 
+def cmd_collect_trajectory(args: argparse.Namespace) -> None:
+    from geniesae.configs import TrajectoryConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = TrajectoryConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        result = config.apply()
+        print(f"Trajectory data saved to: {result}")
+
+
+
 
 
 def main() -> None:
@@ -240,6 +255,13 @@ def main() -> None:
     )
     _add_common_args(p_test_notify)
     p_test_notify.set_defaults(func=cmd_test_notify)
+
+    p_trajectory = subparsers.add_parser(
+        "collect-trajectory",
+        help="Collect SAE feature activations along the full denoising trajectory",
+    )
+    _add_common_args(p_trajectory)
+    p_trajectory.set_defaults(func=cmd_collect_trajectory)
 
     args, overrides = parser.parse_known_args()
     args.overrides = overrides if overrides else None

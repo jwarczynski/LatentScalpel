@@ -1,0 +1,59 @@
+# =============================================================================
+# Trajectory Feature Collection Config
+# =============================================================================
+# Runs the full denoising trajectory and records which SAE features are active
+# at each timestep, with their activation magnitudes.
+#
+# Run:
+#   uv run python main.py collect-trajectory configs/trajectory.yaml
+#
+# Submit to Slurm:
+#   uv run python main.py collect-trajectory configs/trajectory.yaml \
+#       --submit --infra.cluster=slurm
+# =============================================================================
+
+# -- Model --------------------------------------------------------------------
+model_checkpoint_path: "GENIE_ckpt-XSum"
+model_arch: "s2s_CAT"
+in_channel: 128
+model_channels: 128
+out_channel: 128
+vocab_size: 30522
+config_name: "bert-base-uncased"
+logits_mode: 1
+init_pretrained: false
+token_emb_type: "random"
+learn_sigma: false
+fix_encoder: false
+
+# -- SAE ---------------------------------------------------------------------
+sae_checkpoint_dir: "./experiments/sae_checkpoints"
+layers: [0, 5]
+
+# -- Dataset ------------------------------------------------------------------
+dataset_name: "xsum"
+dataset_split: "validation"
+max_samples: 50
+
+# -- Diffusion ----------------------------------------------------------------
+diffusion_steps: 2000
+noise_schedule: "sqrt"
+timestep_subsample: 20  # record every 20th step -> 100 timesteps
+
+# -- Collection ---------------------------------------------------------------
+batch_size: 4
+top_k_to_record: 64
+device: "cuda:0"
+random_seed: 42
+output_path: "./experiments/trajectory_features.json"
+
+# -- Exca infra ---------------------------------------------------------------
+infra:
+  version: "1"
+  folder: "./experiments/cache/trajectory"
+  cluster: null
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 32
+  timeout_min: 1440
+  slurm_partition: plgrid-gpu-a100
