@@ -45,6 +45,8 @@ max_epochs: 15
 # -- Dead feature handling ----------------------------------------------------
 dead_feature_window: 1000000
 resample_dead_features: true
+# Strategy: "none", "resample" (Anthropic-style re-init), or "aux_loss"
+dead_feature_strategy: "none"
 
 # -- Sample limit -------------------------------------------------------------
 # null  -> use all activation samples (default)

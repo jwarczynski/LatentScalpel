@@ -70,6 +70,20 @@ class SAETrainingConfig(BaseModel):
 
     dead_feature_window: int = Field(default=1_000_000, gt=0)
     resample_dead_features: bool = True
+    dead_feature_strategy: str = Field(
+        default="none",
+        description=(
+            "Strategy for handling dead features: "
+            "'none' = only track/report, "
+            "'resample' = re-init dead neurons from high-loss examples each window, "
+            "'aux_loss' = auxiliary reconstruction loss through dead features."
+        ),
+    )
+    aux_loss_coeff: float = Field(
+        default=1e-3,
+        gt=0,
+        description="Coefficient for auxiliary dead-feature loss (only used when strategy='aux_loss').",
+    )
 
     max_samples: int | None = Field(default=None, gt=0)
 
@@ -260,6 +274,8 @@ class SAETrainingConfig(BaseModel):
             k_anneal_steps=k_anneal_steps,
             dead_feature_window=self.dead_feature_window,
             resample_dead=self.resample_dead_features,
+            dead_feature_strategy=self.dead_feature_strategy,
+            aux_loss_coeff=self.aux_loss_coeff,
         )
 
         # --- Logger ---

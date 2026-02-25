@@ -34,6 +34,10 @@ max_epochs: 15
 # -- Dead feature handling ----------------------------------------------------
 dead_feature_window: 1000000
 resample_dead_features: true
+# Strategy: "none", "resample" (Anthropic-style re-init), or "aux_loss"
+# Use "resample" for layer 0 which has high dead feature fraction.
+# Override per-layer via CLI: --dead_feature_strategy=resample
+dead_feature_strategy: "resample"
 
 # -- Sample limit -------------------------------------------------------------
 # Each PLAID timestep file is ~20GB (10k samples × 256 seq × 2048 dim).

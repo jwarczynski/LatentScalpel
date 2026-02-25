@@ -38,6 +38,8 @@ class SAELightningModule(L.LightningModule):
         k_anneal_steps: int = 1000,
         dead_feature_window: int = 10000,
         resample_dead: bool = True,
+        dead_feature_strategy: str = "none",
+        aux_loss_coeff: float = 1e-3,
     ) -> None:
         super().__init__()
         self.sae = sae
@@ -47,6 +49,8 @@ class SAELightningModule(L.LightningModule):
         self.k_anneal_steps = k_anneal_steps
         self.dead_feature_window = dead_feature_window
         self.resample_dead = resample_dead
+        self.dead_feature_strategy = dead_feature_strategy
+        self.aux_loss_coeff = aux_loss_coeff
 
         self.save_hyperparameters(ignore=["sae"])
 
@@ -59,6 +63,9 @@ class SAELightningModule(L.LightningModule):
             "tokens_since_reset",
             torch.tensor(0, dtype=torch.long),
         )
+
+        # Buffer to store high-loss examples for resampling
+        self._resample_batch: torch.Tensor | None = None
 
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         x = batch
@@ -79,19 +86,104 @@ class SAELightningModule(L.LightningModule):
         self.log("train/l0_sparsity", l0)
 
         # Update dead feature tracking — accumulate first, then report
-        # and reset only when the window is full. This avoids the spike
-        # to ~1.0 that happened when we read the counter right after a reset.
+        # and reset only when the window is full.
         active_features = (z != 0).any(dim=0)
         self.feature_activation_count += active_features.long()
         self.tokens_since_reset += x.shape[0]
 
+        # Aux loss: encourage dead features to produce non-zero pre-activations.
+        # Applies a small MSE penalty using only the dead features' decoder columns.
+        if self.dead_feature_strategy == "aux_loss":
+            dead_mask = self.feature_activation_count == 0
+            if dead_mask.any() and self.tokens_since_reset > 0:
+                # Reconstruct using only dead features' pre-activations
+                pre_act = F.linear(x - self.sae.b_dec, self.sae.W_enc)
+                dead_pre_act = pre_act[:, dead_mask]
+                # Soft top-k on dead features only to get a sparse signal
+                n_dead = dead_mask.sum().item()
+                k_aux = min(self.k_target, n_dead)
+                if k_aux > 0:
+                    topk_vals, topk_idx = torch.topk(dead_pre_act, k_aux, dim=-1)
+                    sparse_dead = torch.zeros_like(dead_pre_act)
+                    sparse_dead.scatter_(-1, topk_idx, F.relu(topk_vals))
+                    # Decode through dead columns only
+                    W_dec_dead = self.sae.W_dec[:, dead_mask]
+                    x_hat_aux = F.linear(sparse_dead, W_dec_dead)
+                    aux_loss = F.mse_loss(x_hat_aux, x - x_hat.detach())
+                    loss = loss + self.aux_loss_coeff * aux_loss
+                    self.log("train/aux_loss", aux_loss)
+
+        # Store high-loss examples for potential resampling
+        if self.dead_feature_strategy == "resample":
+            per_sample_loss = (x - x_hat).pow(2).mean(dim=-1)
+            self._resample_batch = x[per_sample_loss.topk(min(256, x.shape[0])).indices].detach()
+
         if self.tokens_since_reset >= self.dead_feature_window:
-            dead_frac = (self.feature_activation_count == 0).float().mean()
+            dead_mask = self.feature_activation_count == 0
+            dead_frac = dead_mask.float().mean()
             self.log("train/dead_feature_fraction", dead_frac)
+
+            # Resample dead features from high-loss examples
+            if (self.dead_feature_strategy == "resample"
+                    and dead_mask.any()
+                    and self._resample_batch is not None):
+                self._resample_dead_features(dead_mask)
+
             self.tokens_since_reset.zero_()
             self.feature_activation_count.zero_()
 
         return loss
+    @torch.no_grad()
+    def _resample_dead_features(self, dead_mask: torch.Tensor) -> None:
+        """Re-initialize dead neurons from high-loss examples (Anthropic-style).
+
+        For each dead feature:
+        - Set its decoder column to a normalized high-loss example direction
+        - Set its encoder row to match (W_enc = W_dec^T for that feature)
+        - Reset the optimizer state for those parameters
+
+        Args:
+            dead_mask: Boolean tensor of shape (dictionary_size,), True for dead features.
+        """
+        dead_indices = dead_mask.nonzero(as_tuple=True)[0]
+        n_dead = dead_indices.shape[0]
+        if n_dead == 0 or self._resample_batch is None:
+            return
+
+        examples = self._resample_batch  # (N, activation_dim)
+        # Sample with replacement from high-loss examples
+        chosen = examples[torch.randint(0, examples.shape[0], (n_dead,))]
+        # Subtract decoder bias to get centered directions
+        directions = chosen - self.sae.b_dec.unsqueeze(0)
+        # Normalize to unit vectors
+        norms = directions.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+        directions = directions / norms
+
+        # Compute alive feature average norm for scaling
+        alive_mask = ~dead_mask
+        alive_enc_norms = self.sae.W_enc[alive_mask].norm(dim=-1)
+        scale = alive_enc_norms.mean() * 0.2 if alive_mask.any() else 0.1
+
+        # Re-init decoder columns and encoder rows
+        self.sae.W_dec[:, dead_indices] = directions.T * scale
+        self.sae.W_enc[dead_indices] = directions * scale
+
+        # Reset optimizer state for resampled parameters
+        optimizer = self.optimizers()
+        if hasattr(optimizer, 'state'):
+            for param in [self.sae.W_enc, self.sae.W_dec]:
+                if param in optimizer.state:
+                    state = optimizer.state[param]
+                    for key in ['exp_avg', 'exp_avg_sq']:
+                        if key in state:
+                            if param is self.sae.W_enc:
+                                state[key][dead_indices] = 0
+                            else:
+                                state[key][:, dead_indices] = 0
+
+        n_total = dead_mask.shape[0]
+        print(f"[Resample] Resampled {n_dead}/{n_total} dead features "
+              f"({n_dead/n_total:.1%})", flush=True)
 
     def on_after_backward(self) -> None:
         """Normalize decoder weights after gradient computation."""
