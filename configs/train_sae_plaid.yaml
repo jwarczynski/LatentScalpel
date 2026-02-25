@@ -1,0 +1,81 @@
+# =============================================================================
+# PLAID SAE Training Config
+# =============================================================================
+# Trains Top-K SAEs on PLAID 1B activations (dim=2048).
+#
+# Single layer:
+#   uv run python main.py train-sae configs/train_sae_plaid.yaml --layer_idx=0
+#
+# Multiple layers (Slurm job array):
+#   uv run python main.py train-sae configs/train_sae_plaid.yaml \
+#       --layers 0 23 --submit --infra.cluster=slurm
+# =============================================================================
+
+# -- Input --------------------------------------------------------------------
+activation_dir: "./experiments/plaid_activations"
+val_activation_dir: "./experiments/plaid_activations_val"
+test_activation_dir: null
+
+# -- Layer selection (required) -----------------------------------------------
+layer_idx: 0
+
+# -- SAE architecture ---------------------------------------------------------
+# PLAID dim=2048, expansion_factor=16 -> dictionary_size=32768
+expansion_factor: 16
+k_target: 64
+k_start_multiplier: 4.0
+k_anneal_fraction: 0.1
+
+# -- Training -----------------------------------------------------------------
+learning_rate: 0.0003
+batch_size: 4096
+max_epochs: 15
+
+# -- Dead feature handling ----------------------------------------------------
+dead_feature_window: 1000000
+resample_dead_features: true
+
+# -- Sample limit -------------------------------------------------------------
+# Each PLAID timestep file is ~20GB (10k samples × 256 seq × 2048 dim).
+# Limit samples to keep memory manageable during training.
+max_samples: 5000000
+
+# -- DataLoader performance ---------------------------------------------------
+# num_workers=0: load in main process to avoid OOM from worker memory duplication
+# (each timestep file is 20GB; multiple workers prefetching = instant OOM)
+num_workers: 0
+persistent_workers: false
+pin_memory: true
+matmul_precision: "high"
+
+# -- Checkpoint resume --------------------------------------------------------
+resume_from: "./experiments/plaid_sae_checkpoints"
+
+# -- Best checkpoint tracking -------------------------------------------------
+save_best: true
+monitor_metric: "val/mse"
+monitor_mode: "min"
+
+# -- Hardware -----------------------------------------------------------------
+num_gpus: 1
+strategy: "auto"
+
+# -- Logging ------------------------------------------------------------------
+wandb_project: "plaid-sae"
+wandb_run_name: null
+use_wandb: true
+
+# -- Output -------------------------------------------------------------------
+output_dir: "./experiments/plaid_sae_checkpoints"
+random_seed: 42
+
+# -- Exca infra ---------------------------------------------------------------
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_training"
+  cluster: null
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 128
+  timeout_min: 2800
+  slurm_partition: plgrid-gpu-a100

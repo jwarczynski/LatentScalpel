@@ -46,6 +46,15 @@ class PlaidCollectionConfig(BaseModel):
     dataset_name: str = "openwebtext"
     dataset_split: str = "train"
     max_samples: int = Field(default=10000, gt=0)
+    skip_samples: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of samples to skip from the beginning of the dataset. "
+            "Useful for creating validation splits from datasets that only "
+            "have a train split (e.g. openwebtext)."
+        ),
+    )
     seq_len: int = Field(default=256, gt=0)
 
     # -- Diffusion sampling ---------------------------------------------------
@@ -63,6 +72,10 @@ class PlaidCollectionConfig(BaseModel):
     force_overwrite: bool = False
     device: str = "cuda:0"
     random_seed: int = 42
+    layers: list[int] | None = Field(
+        default=None,
+        description="Layer indices to collect. None = all layers.",
+    )
 
     # -- Exca -----------------------------------------------------------------
     infra: exca.TaskInfra = exca.TaskInfra(version="1")
@@ -74,11 +87,14 @@ class PlaidCollectionConfig(BaseModel):
     @infra.apply
     @notify_on_completion("collect-plaid-activations")
     def apply(self) -> str:
-        """Collect activations from PLAID transformer blocks."""
-        import nnsight
-        from tokenizers import Tokenizer
+        """Collect activations from PLAID transformer blocks.
 
-        from geniesae.activation_collector import ActivationStore
+        Uses plain PyTorch forward hooks instead of nnsight to minimize
+        memory overhead (nnsight keeps a full computation graph which
+        OOMs on a 1.28B-param model at scale).
+        """
+        import gc
+
         from geniesae.plaid_model import load_plaid_modules
         from geniesae.utils import set_seed
 
@@ -105,61 +121,90 @@ class PlaidCollectionConfig(BaseModel):
         noise_schedule = modules["noise_schedule"]
         gamma_bounds = modules["gamma_bounds"]
 
-        # Wrap model in nnsight for layer hooking
-        nnsight_model = nnsight.NNsight(model)
-
         # -- Load dataset -----------------------------------------------------
         print(f"[PlaidCollection] Loading dataset {self.dataset_name}...", flush=True)
         from datasets import load_dataset as hf_load_dataset
-
-        # Use HF tokenizer for OWT (PLAID uses a custom BPE tokenizer)
-        # We'll use GPT-2 tokenizer as a compatible BPE tokenizer
         from transformers import AutoTokenizer
+
         tokenizer = AutoTokenizer.from_pretrained("gpt2")
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
-        ds = hf_load_dataset(self.dataset_name, split=self.dataset_split, trust_remote_code=True)
-        if self.max_samples < len(ds):
-            ds = ds.select(range(self.max_samples))
+        # Stream to avoid loading full 8M-row dataset into RAM
+        ds = hf_load_dataset(
+            self.dataset_name, split=self.dataset_split,
+            streaming=True,
+        )
+        texts: list[str] = []
+        target = self.skip_samples + self.max_samples
+        for i, row in enumerate(ds):
+            if i >= target:
+                break
+            if i < self.skip_samples:
+                continue
+            texts.append(row["text"])
+        num_texts = len(texts)
+        print(f"[PlaidCollection] Loaded {num_texts} samples via streaming", flush=True)
 
-        # Tokenize
-        text_key = "text" if "text" in ds.column_names else ds.column_names[0]
-        texts = list(ds[text_key])
         encodings = tokenizer(
             texts, padding="max_length", truncation=True,
             max_length=self.seq_len, return_tensors="pt",
         )
         input_ids_all = encodings["input_ids"]
+        del texts, encodings
+        gc.collect()
 
-        # -- Collect activations ----------------------------------------------
-        store = ActivationStore(str(store_dir))
-        num_layers = self.n_blocks
-        activation_dim = self.dim  # transformer hidden dim
+        # -- Set up forward hooks (lightweight, no computation graph) ----------
+        layer_indices = self.layers if self.layers is not None else list(range(self.n_blocks))
+        num_layers = len(layer_indices)
+        activation_dim = self.dim
         total_samples = 0
-        batch_counter = 0
 
-        # Map t values to integer "timestep" indices for storage compatibility
+        # Dict to capture hook outputs — cleared every batch
+        captured: dict[int, torch.Tensor] = {}
+
+        def _make_hook(layer_idx: int):
+            def hook_fn(module, input, output):
+                captured[layer_idx] = output.detach().cpu().float()
+            return hook_fn
+
+        handles = []
+        for li in layer_indices:
+            h = model.blocks[li].register_forward_hook(_make_hook(li))
+            handles.append(h)
+
         t_to_idx = {t_val: int(t_val * 1000) for t_val in self.diffusion_t_values}
 
-        print(f"[PlaidCollection] Collecting at {len(self.diffusion_t_values)} noise levels, "
-              f"{len(texts)} samples, batch_size={self.batch_size}", flush=True)
+        print(f"[PlaidCollection] Collecting layers {layer_indices} at "
+              f"{len(self.diffusion_t_values)} noise levels, "
+              f"{num_texts} samples, batch_size={self.batch_size}", flush=True)
+
+        # Write activations directly to disk per-batch to avoid RAM buildup.
+        # Each batch file: layer_XX/ts_TTTT_batch_BBBBB.pt
+        # After all batches for a timestep, concatenate into one file and
+        # delete the per-batch files.
+        store_dir.mkdir(parents=True, exist_ok=True)
+        for li in layer_indices:
+            (store_dir / f"layer_{li:02d}").mkdir(parents=True, exist_ok=True)
 
         for t_idx, t_val in enumerate(self.diffusion_t_values):
             timestep_idx = t_to_idx[t_val]
-            print(f"  Noise level t={t_val:.2f} ({t_idx+1}/{len(self.diffusion_t_values)})...", flush=True)
+            print(f"  Noise level t={t_val:.2f} ({t_idx+1}/{len(self.diffusion_t_values)})...",
+                  flush=True)
 
-            for batch_start in range(0, len(texts), self.batch_size):
-                batch_end = min(batch_start + self.batch_size, len(texts))
+            batch_counter = 0
+            for batch_start in range(0, num_texts, self.batch_size):
+                batch_end = min(batch_start + self.batch_size, num_texts)
                 b_ids = input_ids_all[batch_start:batch_end].to(device)
                 bs = b_ids.shape[0]
 
-                with torch.no_grad():
-                    # Get embeddings
-                    embedding_matrix = embedding_matrix_module()
-                    x_embed = embedding_matrix[b_ids]  # (bs, seq_len, embed_dim)
+                captured.clear()
 
-                    # Add noise at time t
+                with torch.no_grad():
+                    embedding_matrix = embedding_matrix_module()
+                    b_ids_clamped = b_ids.clamp(max=self.vocab_size - 1)
+                    x_embed = embedding_matrix[b_ids_clamped]
+
                     t_tensor = torch.full((bs,), t_val, device=device)
                     gamma_0, gamma_1 = gamma_bounds()
                     gamma_norm = noise_schedule(t_tensor).double()
@@ -172,44 +217,55 @@ class PlaidCollectionConfig(BaseModel):
                     z = z.float()
 
                     x_selfcond = torch.zeros_like(z)
+                    model(z, gamma.float(), embedding_matrix, 1.0, x_selfcond)
 
-                    # Trace through model to capture block outputs
-                    saved_outputs = []
-                    with nnsight_model.trace(
-                        z, gamma.float(), embedding_matrix, 1.0, x_selfcond
-                    ):
-                        for layer in nnsight_model.blocks:
-                            saved_outputs.append(layer.output.save())
+                # Write each layer's activations directly to disk
+                for li in layer_indices:
+                    act = captured[li]
+                    if act.dim() == 3:
+                        act = act.reshape(-1, act.shape[-1])
+                    total_samples += act.shape[0]
+                    batch_path = store_dir / f"layer_{li:02d}" / f"ts_{timestep_idx:04d}_batch_{batch_counter:05d}.pt"
+                    torch.save(act, batch_path)
 
-                    # Save activations per layer
-                    for layer_idx, proxy in enumerate(saved_outputs):
-                        act = proxy.value if hasattr(proxy, "value") else proxy
-                        if isinstance(act, (tuple, list)):
-                            act = act[0]
-                        act = act.detach().float()
-
-                        if act.dim() == 3:
-                            act = act.reshape(-1, act.shape[-1])
-
-                        total_samples += act.shape[0]
-                        store.save_activations(layer_idx, timestep_idx, batch_counter, act)
-
+                captured.clear()
+                del b_ids, x_embed, z, x_selfcond, noise
+                torch.cuda.empty_cache()
                 batch_counter += 1
 
-            store.flush_timestep(timestep_idx)
+            # Concatenate per-batch files into one timestep file, then delete batches
+            for li in layer_indices:
+                layer_dir = store_dir / f"layer_{li:02d}"
+                batch_files = sorted(layer_dir.glob(f"ts_{timestep_idx:04d}_batch_*.pt"))
+                chunks = [torch.load(bf, map_location="cpu", weights_only=True) for bf in batch_files]
+                combined = torch.cat(chunks, dim=0)
+                torch.save(combined, layer_dir / f"timestep_{timestep_idx:04d}.pt")
+                del chunks, combined
+                for bf in batch_files:
+                    bf.unlink()
+
+            gc.collect()
             print(f"    Flushed timestep t={t_val:.2f}", flush=True)
+
+        # Remove hooks
+        for h in handles:
+            h.remove()
 
         # -- Save metadata ----------------------------------------------------
         metadata = {
             "model": "plaid-1b",
             "num_layers": num_layers,
+            "layer_indices": layer_indices,
             "activation_dim": activation_dim,
             "timesteps": [t_to_idx[t] for t in self.diffusion_t_values],
             "t_values": self.diffusion_t_values,
             "num_samples": total_samples,
             "seq_len": self.seq_len,
         }
-        store.save_metadata(metadata)
+        import json as _json
+        meta_path = store_dir / "metadata.json"
+        with open(meta_path, "w") as f:
+            _json.dump(metadata, f, indent=2)
 
         print(f"[PlaidCollection] Done: {num_layers} layers, {total_samples} samples, "
               f"dim={activation_dim}", flush=True)
