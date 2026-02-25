@@ -66,6 +66,7 @@ class SAELightningModule(L.LightningModule):
 
         # Buffer to store high-loss examples for resampling
         self._resample_batch: torch.Tensor | None = None
+        self._pending_resample_mask: torch.Tensor | None = None
 
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         x = batch
@@ -115,19 +116,22 @@ class SAELightningModule(L.LightningModule):
 
         # Store high-loss examples for potential resampling
         if self.dead_feature_strategy == "resample":
-            per_sample_loss = (x - x_hat).pow(2).mean(dim=-1)
-            self._resample_batch = x[per_sample_loss.topk(min(256, x.shape[0])).indices].detach()
+            with torch.no_grad():
+                per_sample_loss = (x - x_hat).pow(2).mean(dim=-1)
+                self._resample_batch = x[per_sample_loss.topk(min(256, x.shape[0])).indices].detach()
 
         if self.tokens_since_reset >= self.dead_feature_window:
             dead_mask = self.feature_activation_count == 0
             dead_frac = dead_mask.float().mean()
             self.log("train/dead_feature_fraction", dead_frac)
 
-            # Resample dead features from high-loss examples
+            # Flag for resampling — actual resampling happens in
+            # on_train_batch_end (after backward) to avoid in-place
+            # modification of tensors still needed by autograd.
             if (self.dead_feature_strategy == "resample"
                     and dead_mask.any()
                     and self._resample_batch is not None):
-                self._resample_dead_features(dead_mask)
+                self._pending_resample_mask = dead_mask.clone()
 
             self.tokens_since_reset.zero_()
             self.feature_activation_count.zero_()
@@ -190,7 +194,13 @@ class SAELightningModule(L.LightningModule):
         self.sae.normalize_decoder_()
 
     def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
-        """Update k-annealing schedule."""
+        """Update k-annealing schedule and run deferred resampling."""
+        # Resample dead features (deferred from training_step to avoid
+        # in-place weight modification while autograd graph is alive).
+        if self._pending_resample_mask is not None:
+            self._resample_dead_features(self._pending_resample_mask)
+            self._pending_resample_mask = None
+
         step = self.global_step
         if step < self.k_anneal_steps:
             progress = step / max(self.k_anneal_steps, 1)
