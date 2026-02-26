@@ -198,6 +198,47 @@ def cmd_collect_plaid_activations(args: argparse.Namespace) -> None:
         result = config.apply()
         print(f"PLAID activations saved to: {result}")
 
+def cmd_evaluate_plaid(args: argparse.Namespace) -> None:
+    from geniesae.configs import PlaidEvaluationConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = PlaidEvaluationConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        results = config.apply()
+        print(f"PLAID evaluation complete.")
+
+def cmd_collect_t5_activations(args: argparse.Namespace) -> None:
+    from geniesae.configs import T5CollectionConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = T5CollectionConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        result = config.apply()
+        print(f"T5 activations saved to: {result}")
+
+def cmd_correlate_features(args: argparse.Namespace) -> None:
+    from geniesae.configs import CorrelationConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = CorrelationConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        result = config.apply()
+        print(f"Correlation results saved to: {result}")
+
+
+
 
 def cmd_collect_plaid_trajectory(args: argparse.Namespace) -> None:
     from geniesae.configs import PlaidTrajectoryConfig
@@ -298,12 +339,33 @@ def main() -> None:
     _add_common_args(p_plaid_collect)
     p_plaid_collect.set_defaults(func=cmd_collect_plaid_activations)
 
+    p_plaid_eval = subparsers.add_parser(
+        "evaluate-plaid",
+        help="Evaluate SAE reconstruction impact on PLAID model",
+    )
+    _add_common_args(p_plaid_eval)
+    p_plaid_eval.set_defaults(func=cmd_evaluate_plaid)
+
     p_plaid_traj = subparsers.add_parser(
         "collect-plaid-trajectory",
         help="Collect SAE feature activations along PLAID's denoising trajectory",
     )
     _add_common_args(p_plaid_traj)
     p_plaid_traj.set_defaults(func=cmd_collect_plaid_trajectory)
+
+    p_t5_collect = subparsers.add_parser(
+        "collect-t5-activations",
+        help="Collect activations from T5 encoder-decoder model",
+    )
+    _add_common_args(p_t5_collect)
+    p_t5_collect.set_defaults(func=cmd_collect_t5_activations)
+
+    p_correlate = subparsers.add_parser(
+        "correlate-features",
+        help="Compute cross-model feature correlation between Genie and T5 SAEs",
+    )
+    _add_common_args(p_correlate)
+    p_correlate.set_defaults(func=cmd_correlate_features)
 
     args, overrides = parser.parse_known_args()
     args.overrides = overrides if overrides else None
