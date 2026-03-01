@@ -22,7 +22,7 @@ top_k: 30
 unique_examples: true
 features: null
 timesteps: null
-output_dir: "./experiments/results/top_examples/t5"
+output_dir: "./experiments/top_examples/t5"
 device: "cuda:0"
 batch_size: 4096
 

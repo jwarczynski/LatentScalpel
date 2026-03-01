@@ -1,5 +1,5 @@
 # Interpret features — T5 Layer 0 (validation split, no temporal prompt)
-top_examples_path: "./experiments/top_examples/t5/layer_00_top_examples.json"
+top_examples_path: "./experiments/results/top_examples/t5/layer_00_top_examples.json"
 llm_model: "Qwen/Qwen2.5-32B-Instruct-AWQ"
 vllm_base_url: null
 batch_size: 128
