@@ -382,11 +382,10 @@ class DiffusionModel(nn.Module):
         x_reconst = x_reconst @ torch.cat(
             [embedding_matrix, embedding_matrix.detach()], dim=1
         )
-        x_reconst = torch.lerp(
-            x_reconst[:, :, : self.embed_dim],
-            x_reconst[:, :, self.embed_dim :],
-            selfcond_mask.float()[:, None, None],
-        )
+        x_reconst_a = x_reconst[:, :, : self.embed_dim]
+        x_reconst_b = x_reconst[:, :, self.embed_dim :]
+        lerp_weight = selfcond_mask[:, None, None].to(x_reconst_a.dtype)
+        x_reconst = torch.lerp(x_reconst_a, x_reconst_b, lerp_weight)
 
         return logits, x_reconst
 
@@ -507,7 +506,9 @@ class PlaidDiffusionHelper:
     def __init__(
         self,
         modules: dict[str, nn.Module],
-        sampling_timesteps: int = 4096,
+        # NOTE: Default standardised to 256 steps across all PLAID pipelines
+        # (evaluation, trajectory, intervention, schedule experiments).
+        sampling_timesteps: int = 256,
         score_temp: float = 0.9,
     ) -> None:
         self.model = modules["model"]
