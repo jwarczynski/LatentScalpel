@@ -47,7 +47,7 @@ batch_size: 4
 top_k_to_record: 64
 device: "cuda:0"
 random_seed: 42
-output_path: "./experiments/results/genie/trajectory_features.json"
+output_path: "./experiments/results/genie/trajectory"
 
 # -- Exca infra ---------------------------------------------------------------
 infra:

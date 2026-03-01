@@ -284,12 +284,16 @@ class TrajectoryConfig(BaseModel):
                     results[li][t_val][fid] /= num_batches
 
         # -- Save results -----------------------------------------------------
-        # Convert to JSON-serializable format
-        output = {
-            "metadata": {
+        out_path = Path(self.output_path)
+
+        # If output_path looks like a directory (no .json suffix) or ends with /,
+        # save per-layer files inside it. Otherwise save a single combined file.
+        if not out_path.suffix or out_path.suffix != ".json":
+            # Per-layer output mode
+            out_path.mkdir(parents=True, exist_ok=True)
+            common_meta = {
                 "model_checkpoint": self.model_checkpoint_path,
                 "sae_checkpoint_dir": self.sae_checkpoint_dir,
-                "layers": self.layers,
                 "diffusion_steps": self.diffusion_steps,
                 "timestep_subsample": self.timestep_subsample,
                 "sampled_timesteps": sorted(sampled_timesteps),
@@ -297,20 +301,45 @@ class TrajectoryConfig(BaseModel):
                 "num_samples": num_samples,
                 "dataset_name": self.dataset_name,
                 "dataset_split": self.dataset_split,
-            },
-            "layers": {
-                str(li): {
-                    str(t): feats
-                    for t, feats in sorted(results[li].items())
+            }
+            for li in results:
+                layer_output = {
+                    "metadata": {**common_meta, "layer": li},
+                    "timesteps": {
+                        str(t): feats
+                        for t, feats in sorted(results[li].items())
+                    },
                 }
-                for li in results
-            },
-        }
-
-        out_path = Path(self.output_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(out_path, "w") as f:
-            json.dump(output, f, indent=2)
-
-        print(f"[Trajectory] Saved to {out_path}", flush=True)
-        return str(out_path)
+                layer_file = out_path / f"layer_{li:02d}_trajectory.json"
+                with open(layer_file, "w") as f:
+                    json.dump(layer_output, f, indent=2)
+                print(f"[Trajectory] Saved layer {li} to {layer_file}", flush=True)
+            return str(out_path)
+        else:
+            # Single-file output mode (legacy)
+            output = {
+                "metadata": {
+                    "model_checkpoint": self.model_checkpoint_path,
+                    "sae_checkpoint_dir": self.sae_checkpoint_dir,
+                    "layers": self.layers,
+                    "diffusion_steps": self.diffusion_steps,
+                    "timestep_subsample": self.timestep_subsample,
+                    "sampled_timesteps": sorted(sampled_timesteps),
+                    "top_k_to_record": self.top_k_to_record,
+                    "num_samples": num_samples,
+                    "dataset_name": self.dataset_name,
+                    "dataset_split": self.dataset_split,
+                },
+                "layers": {
+                    str(li): {
+                        str(t): feats
+                        for t, feats in sorted(results[li].items())
+                    }
+                    for li in results
+                },
+            }
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(out_path, "w") as f:
+                json.dump(output, f, indent=2)
+            print(f"[Trajectory] Saved to {out_path}", flush=True)
+            return str(out_path)
