@@ -42,7 +42,8 @@ class TestBuildExplanationPrompt:
 
     def test_user_message_starts_with_preamble(self):
         msgs = build_explanation_prompt(["x"])
-        assert msgs[1]["content"].startswith("The activating documents are given below:")
+        assert msgs[1]["content"].startswith("IMPORTANT:")
+        assert "The activating documents are given below:" in msgs[1]["content"]
 
     def test_preserves_angle_bracket_markers(self):
         doc = "The <<cat>> sat on the mat"
