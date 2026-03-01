@@ -7,6 +7,22 @@
 - Method: For 100,000 activation rows from the XSum train split, encode each through both SAEs to get binary co-activation vectors (feature active or not), then compute pairwise Pearson correlation across all feature pairs.
 - Both models were trained/fine-tuned on XSum, so they share the same data domain.
 
+## LLM-as-Judge Interpretation Protocol
+
+Feature explanations and interpretability scores were produced using the DLM-Scope auto-interpretation protocol (arXiv:2602.05859, Appendix D). The protocol has two stages:
+
+**Stage 1 — Explanation generation.** The LLM receives a system message framing the task as studying neurons in a neural network, where each neuron activates on particular words/substrings/concepts. The top-activating documents (with activating tokens marked by `<< >>`) are listed from most to least strongly activating. The LLM is asked to summarize in a single sentence what the neuron activates on.
+
+System prompt (explanation):
+> "We're studying neurons in a neural network. Each neuron activates on some particular word/words/substring/concept in a short document. The activating words in each document are indicated with << ... >>. We will give you a list of documents on which the neuron activates, in order from most strongly activating to least strongly activating. Look at the parts of the document the neuron activates for and summarize in a single sentence what the neuron is activating on. Note that some neurons will activate only on specific words or substrings, but others will activate on most/all words in a sentence provided that sentence contains some particular concept. Your explanation should cover most or all activating words. Pay attention to capitalization and punctuation, since they might matter."
+
+**Stage 2 — Discrimination scoring.** The LLM receives the explanation from Stage 1 and a shuffled mix of activating and non-activating examples (without markers). It must predict which examples the neuron would activate on. The interpretability score is computed as accuracy: (TP + TN) / total.
+
+System prompt (scoring):
+> "We're studying neurons in a neural network. Each neuron activates on some particular word/words/substring/concept in a short document. You will be given a short explanation of what this neuron activates for, and then be shown several example sequences in random order. You must return a comma-separated list of the examples where you think the neuron should activate at least once, on ANY of the words or substrings in the document. For example, your response might look like '2, 9, 10, 12'. Try not to be overly specific in your interpretation of the explanation. If you think there are no examples where the neuron will activate, you should just respond with 'None'. You should include nothing else in your response other than comma-separated numbers or the word 'None' - this is important."
+
+Both Genie and T5 features were interpreted independently using the same protocol with `Qwen/Qwen2.5-32B-Instruct-AWQ` as the judge LLM and 20 scoring examples per feature.
+
 ## Statistics
 
 | Metric | Value |
