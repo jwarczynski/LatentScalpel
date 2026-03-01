@@ -1,5 +1,5 @@
-# Interpret features for Layer 5 (trajectory analysis)
-top_examples_path: "./experiments/results/top_examples/genie/layer_05_top_examples.json"
+# Interpret features — Genie Layer 5 (validation split, no temporal prompt)
+top_examples_path: "./experiments/top_examples/genie/layer_05_top_examples.json"
 llm_model: "Qwen/Qwen2.5-32B-Instruct-AWQ"
 vllm_base_url: null
 batch_size: 128
@@ -13,9 +13,11 @@ output_path: "./experiments/results/genie/interpretation_results_layer_05.json"
 infra:
   version: "1"
   folder: "./experiments/cache/interpretation_l5"
-  cluster: null
+  cluster: slurm
   gpus_per_node: 1
   cpus_per_task: 4
   mem_gb: 64
   timeout_min: 600
   slurm_partition: plgrid-gpu-a100
+  slurm_additional_parameters:
+    exclude: "t0021"

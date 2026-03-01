@@ -1,8 +1,8 @@
-# Top examples for Genie Layer 0 — uses validation split
+# Top examples for Genie Layer 4 — uses validation split
 # NOTE: dataset_split must match the split used for activation collection.
-sae_checkpoint_path: "./experiments/sae_checkpoints/genie/layer_00_best.ckpt"
+sae_checkpoint_path: "./experiments/sae_checkpoints/genie/layer_04_best.ckpt"
 activation_dir: "./experiments/activations/genie/xsum/validation"
-layer_idx: 0
+layer_idx: 4
 dataset_name: "xsum"
 dataset_split: "validation"
 top_k: 30
@@ -15,7 +15,7 @@ batch_size: 4096
 
 infra:
   version: "1"
-  folder: "./experiments/cache/top_examples_l0"
+  folder: "./experiments/cache/top_examples_l4"
   cluster: slurm
   gpus_per_node: 1
   cpus_per_task: 4

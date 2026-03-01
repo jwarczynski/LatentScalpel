@@ -61,7 +61,9 @@ class TrajectoryConfig(BaseModel):
     # -- Dataset --------------------------------------------------------------
     dataset_name: str = "xsum"
     dataset_split: str = "validation"
-    max_samples: int = Field(default=100, gt=0)
+    # NOTE: Use null (all examples) for reliable results. Small sample sizes
+    # (e.g. 50) are insufficient for drawing conclusions from heatmap plots.
+    max_samples: int | None = Field(default=None, description="Max examples (None=all)")
 
     # -- Diffusion ------------------------------------------------------------
     diffusion_steps: int = Field(default=2000, gt=0)
@@ -136,7 +138,7 @@ class TrajectoryConfig(BaseModel):
         # -- Load dataset -----------------------------------------------------
         print(f"[Trajectory] Loading dataset {self.dataset_name} ({self.dataset_split})...", flush=True)
         ds = load_dataset(self.dataset_name, split=self.dataset_split)
-        if self.max_samples < len(ds):
+        if self.max_samples is not None and self.max_samples < len(ds):
             ds = ds.select(range(self.max_samples))
 
         if tokenizer.pad_token is None:

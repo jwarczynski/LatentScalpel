@@ -18,18 +18,14 @@
 
 # -- Input --------------------------------------------------------------------
 sae_checkpoint_path: "./experiments/sae_checkpoints/genie/layer_01_best.ckpt"
-activation_dir: "./experiments/activations/genie/xsum/train"
+activation_dir: "./experiments/activations/genie/xsum/validation"
 layer_idx: 1
 
 # -- Dataset ------------------------------------------------------------------
 # NOTE: dataset_split must match the split used during activation collection
-# (the activation_dir above). Example IDs in the activation store are indices
-# into this HuggingFace split. Currently using train because activations were
-# collected from train. Ideally, post-training stages should use validation-
-# split activations — collect them first, then point activation_dir and
-# dataset_split to the validation set.
+# (the activation_dir above). Use validation split for all post-training stages.
 dataset_name: "xsum"
-dataset_split: "train"
+dataset_split: "validation"
 
 # -- Top-K selection ----------------------------------------------------------
 top_k: 30                  # number of top examples to keep per feature
@@ -50,7 +46,7 @@ timesteps: null
 
 # -- Output -------------------------------------------------------------------
 # Output file is written to {output_dir}/layer_{layer_idx:02d}_top_examples.json
-output_dir: "./experiments/results/top_examples/genie"
+output_dir: "./experiments/top_examples/genie"
 
 # -- Hardware -----------------------------------------------------------------
 device: "cuda:0"

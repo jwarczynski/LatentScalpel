@@ -1,5 +1,5 @@
-# Interpret features — T5 Layer 11 (validation split, no temporal prompt)
-top_examples_path: "./experiments/top_examples/t5/layer_11_top_examples.json"
+# Interpret features — Genie Layer 1 (validation split, no temporal prompt)
+top_examples_path: "./experiments/top_examples/genie/layer_01_top_examples.json"
 llm_model: "Qwen/Qwen2.5-32B-Instruct-AWQ"
 vllm_base_url: null
 batch_size: 128
@@ -8,11 +8,11 @@ max_tokens_explanation: 256
 max_tokens_scoring: 128
 temperature: 0.0
 features: null
-output_path: "./experiments/results/t5/interpretation_results_layer_11.json"
+output_path: "./experiments/results/genie/interpretation_results_layer_01.json"
 
 infra:
   version: "1"
-  folder: "./experiments/cache/interpretation_t5_l11"
+  folder: "./experiments/cache/interpretation_l1"
   cluster: slurm
   gpus_per_node: 1
   cpus_per_task: 4

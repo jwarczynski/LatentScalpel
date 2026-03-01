@@ -28,9 +28,11 @@ fix_encoder: false
 
 # -- SAE ---------------------------------------------------------------------
 sae_checkpoint_dir: "./experiments/sae_checkpoints/genie"
-layers: [0, 5]
+layers: [0, 1, 4, 5]
 
 # -- Dataset ------------------------------------------------------------------
+# NOTE: Use all validation examples for reliable heatmap plots. Small sample
+# sizes (e.g. 50) are insufficient for drawing conclusions.
 dataset_name: "xsum"
 dataset_split: "validation"
 max_samples: null
@@ -38,7 +40,7 @@ max_samples: null
 # -- Diffusion ----------------------------------------------------------------
 diffusion_steps: 2000
 noise_schedule: "sqrt"
-timestep_subsample: 20  # record every 20th step -> 100 timesteps
+timestep_subsample: 10  # record every 10th step -> 200 timesteps
 
 # -- Collection ---------------------------------------------------------------
 batch_size: 4
@@ -51,9 +53,11 @@ output_path: "./experiments/results/genie/trajectory_features.json"
 infra:
   version: "1"
   folder: "./experiments/cache/trajectory"
-  cluster: null
+  cluster: slurm
   gpus_per_node: 1
   cpus_per_task: 4
-  mem_gb: 32
-  timeout_min: 1440
+  mem_gb: 64
+  timeout_min: 2800
   slurm_partition: plgrid-gpu-a100
+  slurm_additional_parameters:
+    exclude: "t0021"

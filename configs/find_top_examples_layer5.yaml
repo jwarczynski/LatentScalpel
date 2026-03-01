@@ -1,4 +1,5 @@
-# Top examples for Layer 5 (trajectory analysis)
+# Top examples for Genie Layer 5 — uses validation split
+# NOTE: dataset_split must match the split used for activation collection.
 sae_checkpoint_path: "./experiments/sae_checkpoints/genie/layer_05_best.ckpt"
 activation_dir: "./experiments/activations/genie/xsum/validation"
 layer_idx: 5
@@ -8,16 +9,18 @@ top_k: 30
 unique_examples: true
 features: null
 timesteps: null
-output_dir: "./experiments/results/top_examples/genie"
+output_dir: "./experiments/top_examples/genie"
 device: "cuda:0"
 batch_size: 4096
 
 infra:
   version: "1"
   folder: "./experiments/cache/top_examples_l5"
-  cluster: null
+  cluster: slurm
   gpus_per_node: 1
   cpus_per_task: 4
   mem_gb: 32
   timeout_min: 180
   slurm_partition: plgrid-gpu-a100
+  slurm_additional_parameters:
+    exclude: "t0021"
