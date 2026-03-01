@@ -204,7 +204,14 @@ class TopExamplesConfig(BaseModel):
         available_timesteps: list[int] = metadata["timesteps"]
 
         # 3. Validate layer_idx
-        if self.layer_idx >= num_layers:
+        layer_indices = metadata.get("layer_indices")
+        if layer_indices is not None:
+            if self.layer_idx not in layer_indices:
+                raise ValueError(
+                    f"layer_idx={self.layer_idx} not in available layers "
+                    f"{layer_indices}"
+                )
+        elif self.layer_idx >= num_layers:
             raise ValueError(
                 f"layer_idx={self.layer_idx} out of range "
                 f"(activation store has {num_layers} layers, 0-{num_layers - 1})"

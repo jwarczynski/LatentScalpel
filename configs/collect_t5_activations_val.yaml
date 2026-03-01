@@ -1,0 +1,41 @@
+# =============================================================================
+# T5 Activation Collection — Validation Split
+# =============================================================================
+# Collects decoder residual-stream activations from T5 on XSum validation set.
+#
+# Run:
+#   uv run python main.py collect-t5-activations configs/collect_t5_activations_val.yaml
+#
+# Submit to Slurm:
+#   uv run python main.py collect-t5-activations configs/collect_t5_activations_val.yaml \
+#       --submit --infra.cluster=slurm
+# =============================================================================
+
+# -- Model --------------------------------------------------------------------
+model_name: "sysresearch101/t5-large-finetuned-xsum"
+
+# -- Dataset ------------------------------------------------------------------
+dataset_name: "xsum"
+dataset_split: "validation"
+max_samples: 3000
+max_length: 512
+
+# -- Collection ---------------------------------------------------------------
+layers: [0, 11, 23]
+batch_size: 16
+output_dir: "./experiments/activations/t5/xsum/validation"
+force_overwrite: false
+device: "cuda:0"
+random_seed: 42
+
+# -- Exca infra ---------------------------------------------------------------
+infra:
+  version: "1"
+  folder: "./experiments/cache/t5_collection_val"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 64
+  timeout_min: 360
+  slurm_partition: plgrid-gpu-a100
+  slurm_constraint: null

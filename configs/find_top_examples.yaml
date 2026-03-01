@@ -17,8 +17,8 @@
 # =============================================================================
 
 # -- Input --------------------------------------------------------------------
-sae_checkpoint_path: "./experiments/sae_checkpoints/layer_01_best.ckpt"
-activation_dir: "./experiments/activations/xsum/train"
+sae_checkpoint_path: "./experiments/sae_checkpoints/genie/layer_01_best.ckpt"
+activation_dir: "./experiments/activations/genie/xsum/train"
 layer_idx: 1
 
 # -- Dataset ------------------------------------------------------------------
@@ -44,7 +44,7 @@ timesteps: null
 
 # -- Output -------------------------------------------------------------------
 # Output file is written to {output_dir}/layer_{layer_idx:02d}_top_examples.json
-output_dir: "./experiments/top_examples"
+output_dir: "./experiments/top_examples/genie"
 
 # -- Hardware -----------------------------------------------------------------
 device: "cuda:0"

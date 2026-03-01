@@ -195,8 +195,15 @@ class SAETrainingConfig(BaseModel):
         meta = self._load_metadata()
         activation_dim = meta["activation_dim"]
         num_layers = meta["num_layers"]
+        layer_indices = meta.get("layer_indices")
 
-        if self.layer_idx >= num_layers:
+        if layer_indices is not None:
+            if self.layer_idx not in layer_indices:
+                raise ValueError(
+                    f"layer_idx={self.layer_idx} not in collected layers "
+                    f"{layer_indices}"
+                )
+        elif self.layer_idx >= num_layers:
             raise ValueError(
                 f"layer_idx={self.layer_idx} out of range "
                 f"(model has {num_layers} layers, 0-{num_layers - 1})"

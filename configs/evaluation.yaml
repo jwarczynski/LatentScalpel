@@ -14,7 +14,7 @@
 # =============================================================================
 
 # -- Model --------------------------------------------------------------------
-model_checkpoint_path: "GENIE_ckpt-XSum"
+model_checkpoint_path: "models/genie/GENIE_ckpt-XSum"
 model_arch: "s2s_CAT"
 in_channel: 128
 model_channels: 128
@@ -28,12 +28,12 @@ learn_sigma: false
 fix_encoder: false
 
 # -- SAE checkpoints ---------------------------------------------------------
-sae_checkpoint_dir: "./experiments/sae_checkpoints"
+sae_checkpoint_dir: "./experiments/sae_checkpoints/genie"
 
 # null -> auto-detect from available layer_XX_best.ckpt / layer_XX.ckpt files
 # [0]  -> evaluate only layer 0
 # [0, 1, 2] -> evaluate layers 0, 1, 2
-sae_layers: [1]
+sae_layers: [0]
 
 # Prefer layer_XX_best.ckpt over layer_XX.ckpt when both exist
 prefer_best: true
@@ -73,7 +73,7 @@ wandb_run_id: null
 skip_timesteps: 0
 
 # -- Output -------------------------------------------------------------------
-output_dir: "./experiments/results"
+output_dir: "./experiments/results/genie"
 
 # -- Exca infra ---------------------------------------------------------------
 infra:

@@ -1,0 +1,21 @@
+# Interpret features for Layer 5 (trajectory analysis)
+top_examples_path: "./experiments/top_examples/genie/layer_05_top_examples.json"
+llm_model: "Qwen/Qwen2.5-32B-Instruct-AWQ"
+vllm_base_url: null
+batch_size: 128
+num_scoring_examples: 20
+max_tokens_explanation: 256
+max_tokens_scoring: 128
+temperature: 0.0
+features: null
+output_path: "./experiments/results/genie/interpretation_results_layer_05.json"
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/interpretation_l5"
+  cluster: null
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 64
+  timeout_min: 600
+  slurm_partition: plgrid-gpu-a100

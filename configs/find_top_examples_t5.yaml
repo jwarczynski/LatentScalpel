@@ -1,0 +1,37 @@
+# =============================================================================
+# Find Top-Activating Examples — T5 (all 3 layers via job array)
+# =============================================================================
+# Discovers top-activating dataset examples for T5 SAE features.
+#
+# Single layer:
+#   uv run python main.py find-top-examples configs/find_top_examples_t5.yaml --layer_idx=0
+#
+# All 3 layers (Slurm job array):
+#   uv run python main.py find-top-examples configs/find_top_examples_t5.yaml \
+#       --layers 0 11 23 --submit --infra.cluster=slurm
+# =============================================================================
+
+sae_checkpoint_path: "./experiments/sae_checkpoints/t5/layer_00_best.ckpt"
+activation_dir: "./experiments/activations/t5/xsum/train"
+layer_idx: 0
+dataset_name: "xsum"
+dataset_split: "train"
+top_k: 30
+unique_examples: true
+features: null
+timesteps: null
+output_dir: "./experiments/top_examples/t5"
+device: "cuda:0"
+batch_size: 4096
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/top_examples_t5"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 32
+  timeout_min: 120
+  slurm_partition: plgrid-gpu-a100
+  slurm_additional_parameters:
+    exclude: "t0021"

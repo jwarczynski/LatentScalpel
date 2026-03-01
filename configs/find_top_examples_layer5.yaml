@@ -1,0 +1,23 @@
+# Top examples for Layer 5 (trajectory analysis)
+sae_checkpoint_path: "./experiments/sae_checkpoints/genie/layer_05_best.ckpt"
+activation_dir: "./experiments/activations/genie/xsum/validation"
+layer_idx: 5
+dataset_name: "xsum"
+dataset_split: "validation"
+top_k: 30
+unique_examples: true
+features: null
+timesteps: null
+output_dir: "./experiments/top_examples/genie"
+device: "cuda:0"
+batch_size: 4096
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/top_examples_l5"
+  cluster: null
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 32
+  timeout_min: 180
+  slurm_partition: plgrid-gpu-a100

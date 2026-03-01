@@ -1,0 +1,45 @@
+# Layer 5 iterative evaluation
+model_checkpoint_path: "models/genie/GENIE_ckpt-XSum"
+model_arch: "s2s_CAT"
+in_channel: 128
+model_channels: 128
+out_channel: 128
+vocab_size: 30522
+config_name: "bert-base-uncased"
+logits_mode: 1
+init_pretrained: false
+token_emb_type: "random"
+learn_sigma: false
+fix_encoder: false
+
+sae_checkpoint_dir: "./experiments/sae_checkpoints/genie"
+sae_layers: [5]
+prefer_best: true
+
+dataset_name: "xsum"
+dataset_split: "validation"
+max_samples: 500
+
+diffusion_steps: 2000
+noise_schedule: "sqrt"
+diffusion_timesteps: "all"
+
+eval_mode: "iterative"
+batch_size: 16
+device: "cuda:0"
+
+use_wandb: true
+wandb_project: "genie-sae"
+
+output_dir: "./experiments/results/genie"
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/evaluation"
+  cluster: null
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 32
+  timeout_min: 2800
+  slurm_partition: plgrid-gpu-a100
+  slurm_constraint: null

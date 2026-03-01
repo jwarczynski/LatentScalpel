@@ -1,0 +1,58 @@
+# =============================================================================
+# T5 Activation Collection Config
+# =============================================================================
+# Collects decoder residual-stream activations from a T5 encoder-decoder model.
+# T5 is not a diffusion model, so activations are collected at a single
+# timestep (timestep 0) from the decoder's residual stream using forward hooks.
+#
+# Run:
+#   uv run python main.py collect-t5-activations configs/collect_t5_activations.yaml
+#
+# Submit to Slurm:
+#   uv run python main.py collect-t5-activations configs/collect_t5_activations.yaml \
+#       --submit --infra.cluster=slurm
+#
+# Override examples:
+#   uv run python main.py collect-t5-activations configs/collect_t5_activations.yaml \
+#       --dataset_split=validation --output_dir=./experiments/t5_activations_val
+# =============================================================================
+
+# -- Model --------------------------------------------------------------------
+model_name: "sysresearch101/t5-large-finetuned-xsum"
+
+# -- Dataset ------------------------------------------------------------------
+dataset_name: "xsum"
+dataset_split: "train"
+max_samples: 10000
+max_length: 512
+
+# To collect val/test activations, run again with different split and output_dir:
+#   --dataset_split=validation --output_dir=./experiments/activations/t5/xsum/validation
+#   --dataset_split=test --output_dir=./experiments/activations/t5/xsum/test
+
+# -- Collection ---------------------------------------------------------------
+# Decoder layers to collect. null = all 24 decoder layers.
+# Specify a subset to save time/disk, e.g. [0, 6, 12, 18, 23]
+layers: [0, 11, 23]
+batch_size: 16
+output_dir: "./experiments/activations/t5/xsum/train"
+force_overwrite: false
+device: "cuda:0"
+random_seed: 42
+
+# -- Exca infra ---------------------------------------------------------------
+# cluster: null  -> run in current process (default)
+# cluster: local -> run in a dedicated subprocess
+# cluster: slurm -> submit to slurm
+# cluster: auto  -> slurm if available, otherwise local
+infra:
+  version: "1"
+  folder: "./experiments/cache/t5_collection"
+  cluster: slurm
+  # Slurm resources (used when cluster is "slurm" or "auto")
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 64
+  timeout_min: 360
+  slurm_partition: plgrid-gpu-a100
+  slurm_constraint: null

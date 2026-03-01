@@ -1,18 +1,19 @@
 # =============================================================================
-# Trajectory Feature Collection Config
+# Schedule Modification Experiment Config
 # =============================================================================
-# Runs the full denoising trajectory and records which SAE features are active
-# at each timestep, with their activation magnitudes.
+# Runs the denoising process with a modified schedule and compares temporal
+# profiles against the standard schedule.
 #
 # Run:
-#   uv run python main.py collect-trajectory configs/trajectory.yaml
+#   uv run python main.py run-schedule-experiment configs/schedule_experiment.yaml
 #
 # Submit to Slurm:
-#   uv run python main.py collect-trajectory configs/trajectory.yaml \
+#   uv run python main.py run-schedule-experiment configs/schedule_experiment.yaml \
 #       --submit --infra.cluster=slurm
 # =============================================================================
 
 # -- Model --------------------------------------------------------------------
+model_type: "genie"
 model_checkpoint_path: "models/genie/GENIE_ckpt-XSum"
 model_arch: "s2s_CAT"
 in_channel: 128
@@ -30,27 +31,36 @@ fix_encoder: false
 sae_checkpoint_dir: "./experiments/sae_checkpoints/genie"
 layers: [0, 5]
 
-# -- Dataset ------------------------------------------------------------------
-dataset_name: "xsum"
-dataset_split: "validation"
-max_samples: null
+# -- Schedule modification ---------------------------------------------------
+modification_type: "reduce_total"
+modification_params:
+  new_total: 1500
+
+# -- Trajectory collection ----------------------------------------------------
+timestep_subsample: 20
+top_k_to_record: 64
 
 # -- Diffusion ----------------------------------------------------------------
 diffusion_steps: 2000
 noise_schedule: "sqrt"
-timestep_subsample: 20  # record every 20th step -> 100 timesteps
 
-# -- Collection ---------------------------------------------------------------
-batch_size: 4
-top_k_to_record: 64
+# -- Dataset ------------------------------------------------------------------
+dataset_name: "xsum"
+dataset_split: "validation"
+max_samples: null
+batch_size: 8
+
+# -- Output -------------------------------------------------------------------
+output_dir: "./experiments/schedule_experiment"
+
+# -- Device -------------------------------------------------------------------
 device: "cuda:0"
 random_seed: 42
-output_path: "./experiments/results/genie/trajectory_features.json"
 
 # -- Exca infra ---------------------------------------------------------------
 infra:
   version: "1"
-  folder: "./experiments/cache/trajectory"
+  folder: "./experiments/cache/schedule_experiment"
   cluster: null
   gpus_per_node: 1
   cpus_per_task: 4

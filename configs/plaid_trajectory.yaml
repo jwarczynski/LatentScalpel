@@ -23,34 +23,38 @@ gamma_0: -3.0
 gamma_1: 6.0
 
 # -- SAE ----------------------------------------------------------------------
-sae_checkpoint_dir: "./experiments/plaid_sae_checkpoints"
-layers: [0, 12, 23]
+sae_checkpoint_dir: "./experiments/sae_checkpoints/plaid"
+layers: [0, 23]
 
 # -- Dataset ------------------------------------------------------------------
 dataset_name: "openwebtext"
 dataset_split: "train"
-max_samples: 50
+max_samples: null
 seq_len: 256
 
 # -- Diffusion ----------------------------------------------------------------
-sampling_timesteps: 4096
+# NOTE: Standardised to 256 steps (same as plaid_evaluation.yaml) for
+# consistency across all PLAID pipelines.  Every step is recorded
+# (timestep_subsample=1) so we get 256 trajectory data-points — enough
+# resolution without the overhead of 4096 steps.
+sampling_timesteps: 256
 score_temp: 0.9
-timestep_subsample: 40  # record every 40th step -> ~102 timesteps
+timestep_subsample: 1  # record every step (256 total)
 
 # -- Collection ---------------------------------------------------------------
 batch_size: 2
 top_k_to_record: 64
 device: "cuda:0"
 random_seed: 42
-output_path: "./experiments/plaid_trajectory_features.json"
+output_path: "./experiments/results/plaid/trajectory_features.json"
 
 # -- Exca infra ---------------------------------------------------------------
 infra:
   version: "1"
   folder: "./experiments/cache/plaid_trajectory"
-  cluster: null
+  cluster: slurm
   gpus_per_node: 1
   cpus_per_task: 4
   mem_gb: 64
-  timeout_min: 1440
+  timeout_min: 480
   slurm_partition: plgrid-gpu-a100

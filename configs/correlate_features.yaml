@@ -1,0 +1,56 @@
+# =============================================================================
+# Cross-Model Feature Correlation Config
+# =============================================================================
+# Computes pairwise Pearson correlation between T5 SAE features and Genie SAE
+# features based on co-activation patterns across a shared evaluation dataset
+# (XSum validation set by default).
+#
+# Run:
+#   uv run python main.py correlate-features configs/correlate_features.yaml
+#
+# Submit to Slurm:
+#   uv run python main.py correlate-features configs/correlate_features.yaml \
+#       --submit --infra.cluster=slurm
+#
+# Override examples:
+#   uv run python main.py correlate-features configs/correlate_features.yaml \
+#       --top_k_summary=20 --output_dir=./experiments/correlation_k20
+# =============================================================================
+
+# -- SAE checkpoints ---------------------------------------------------------
+genie_sae_checkpoint: "./experiments/sae_checkpoints/genie/layer_00_best.ckpt"
+t5_sae_checkpoint: "./experiments/sae_checkpoints/t5/layer_00_best.ckpt"
+
+# -- Activation sources -------------------------------------------------------
+genie_activation_dir: "./experiments/activations/genie/xsum/train"
+t5_activation_dir: "./experiments/activations/t5/xsum/train"
+genie_layer_idx: 0
+t5_layer_idx: 0
+
+# -- Dataset ------------------------------------------------------------------
+dataset_split: "train"
+max_samples: 100000
+
+# -- Correlation --------------------------------------------------------------
+top_k_summary: 10
+
+# -- Output -------------------------------------------------------------------
+output_dir: "./experiments/correlation/genie_l0_vs_t5_l0"
+
+# -- Exca infra ---------------------------------------------------------------
+# cluster: null  -> run in current process (default)
+# cluster: local -> run in a dedicated subprocess
+# cluster: slurm -> submit to slurm
+# cluster: auto  -> slurm if available, otherwise local
+infra:
+  version: "1"
+  folder: "./experiments/cache/correlation"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 128
+  timeout_min: 120
+  slurm_partition: plgrid-gpu-a100
+  slurm_additional_parameters:
+    exclude: "t0021"
+  slurm_constraint: null

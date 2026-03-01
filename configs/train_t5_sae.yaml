@@ -1,0 +1,77 @@
+# =============================================================================
+# T5 SAE Training Config
+# =============================================================================
+# Trains Top-K SAEs on T5 decoder activations.
+#
+# Train a single layer:
+#   uv run python main.py train-sae configs/train_t5_sae.yaml --layer_idx=0
+#
+# Train all 3 layers via job array:
+#   uv run python main.py train-sae configs/train_t5_sae.yaml \
+#       --layers 0 11 23 --submit --infra.cluster=slurm
+# =============================================================================
+
+# -- Input --------------------------------------------------------------------
+activation_dir: "./experiments/activations/t5/xsum/train"
+val_activation_dir: "./experiments/activations/t5/xsum/validation"
+test_activation_dir: null
+
+# -- Layer selection (required) -----------------------------------------------
+layer_idx: 0
+
+# -- SAE architecture ---------------------------------------------------------
+expansion_factor: 16
+k_target: 32
+k_start_multiplier: 4.0
+k_anneal_fraction: 0.1
+
+# -- Training -----------------------------------------------------------------
+learning_rate: 0.0003
+batch_size: 4096
+max_epochs: 15
+
+# -- Dead feature handling ----------------------------------------------------
+dead_feature_window: 1000000
+resample_dead_features: true
+dead_feature_strategy: "none"
+
+# -- Sample limit -------------------------------------------------------------
+max_samples: null
+
+# -- DataLoader performance ---------------------------------------------------
+num_workers: 3
+persistent_workers: true
+pin_memory: true
+matmul_precision: "high"
+
+# -- Checkpoint resume --------------------------------------------------------
+resume_from: null
+
+# -- Best checkpoint tracking -------------------------------------------------
+save_best: true
+monitor_metric: "val/mse"
+monitor_mode: "min"
+
+# -- Hardware -----------------------------------------------------------------
+num_gpus: 1
+strategy: "auto"
+
+# -- Logging ------------------------------------------------------------------
+wandb_project: "t5-sae"
+wandb_run_name: null
+use_wandb: true
+
+# -- Output -------------------------------------------------------------------
+output_dir: "./experiments/sae_checkpoints/t5"
+random_seed: 42
+
+# -- Exca infra ---------------------------------------------------------------
+infra:
+  version: "1"
+  folder: "./experiments/cache/t5_training"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 64
+  timeout_min: 480
+  slurm_partition: plgrid-gpu-a100
