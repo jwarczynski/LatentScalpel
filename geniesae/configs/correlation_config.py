@@ -52,7 +52,7 @@ class CorrelationConfig(BaseModel):
     top_k_summary: int = Field(default=10, gt=0, description="Top-K features in summary")
 
     # -- Output ---------------------------------------------------------------
-    output_dir: str = "./experiments/correlation"
+    output_dir: str = "./experiments/results/correlation"
     device: str = "cuda:0"
 
     # -- Exca -----------------------------------------------------------------

@@ -30,7 +30,7 @@ def load_data():
         if ip.exists():
             with open(ip) as f:
                 interp[layer_int] = json.load(f)["features"]
-        tp_ = Path(f"experiments/top_examples/layer_{layer}_top_examples.json")
+        tp_ = Path(f"experiments/results/top_examples/layer_{layer}_top_examples.json")
         if tp_.exists():
             with open(tp_) as f:
                 d = json.load(f)

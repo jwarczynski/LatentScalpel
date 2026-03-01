@@ -92,5 +92,5 @@ The vast majority of cross-model feature pairs are uncorrelated (mean ~0), which
 
 ## Output Files
 
-- `experiments/correlation/genie_l0_vs_t5_l0/correlation_matrix.pt` (16384 x 12288 tensor)
-- `experiments/correlation/genie_l0_vs_t5_l0/correlation_summary.json`
+- `experiments/results/correlation/genie_l0_vs_t5_l0/correlation_matrix.pt` (16384 x 12288 tensor)
+- `experiments/results/correlation/genie_l0_vs_t5_l0/correlation_summary.json`

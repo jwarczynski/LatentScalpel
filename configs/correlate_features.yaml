@@ -14,7 +14,7 @@
 #
 # Override examples:
 #   uv run python main.py correlate-features configs/correlate_features.yaml \
-#       --top_k_summary=20 --output_dir=./experiments/correlation_k20
+#       --top_k_summary=20 --output_dir=./experiments/results/correlation_k20
 # =============================================================================
 
 # -- SAE checkpoints ---------------------------------------------------------
@@ -39,7 +39,7 @@ max_samples: 100000
 top_k_summary: 10
 
 # -- Output -------------------------------------------------------------------
-output_dir: "./experiments/correlation/genie_l0_vs_t5_l0"
+output_dir: "./experiments/results/correlation/genie_l0_vs_t5_l0"
 
 # -- Exca infra ---------------------------------------------------------------
 # cluster: null  -> run in current process (default)

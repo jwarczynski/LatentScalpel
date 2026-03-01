@@ -70,7 +70,7 @@ def highlight_token_in_context(
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "experiments/top_examples/layer_01_top_examples.json"
+    path = sys.argv[1] if len(sys.argv) > 1 else "experiments/results/top_examples/layer_01_top_examples.json"
     feat_idx = sys.argv[2] if len(sys.argv) > 2 else "0"
     num_show = int(sys.argv[3]) if len(sys.argv) > 3 else 5
 

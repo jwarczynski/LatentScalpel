@@ -50,7 +50,7 @@ timesteps: null
 
 # -- Output -------------------------------------------------------------------
 # Output file is written to {output_dir}/layer_{layer_idx:02d}_top_examples.json
-output_dir: "./experiments/top_examples/genie"
+output_dir: "./experiments/results/top_examples/genie"
 
 # -- Hardware -----------------------------------------------------------------
 device: "cuda:0"

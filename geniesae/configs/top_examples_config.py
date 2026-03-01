@@ -161,7 +161,7 @@ class TopExamplesConfig(BaseModel):
             "timesteps from the activation directory."
         ),
     )
-    output_dir: str = "./experiments/top_examples"
+    output_dir: str = "./experiments/results/top_examples"
     device: str = "cuda:0"
     batch_size: int = Field(default=4096, gt=0)
     infra: exca.TaskInfra = exca.TaskInfra(version="1")

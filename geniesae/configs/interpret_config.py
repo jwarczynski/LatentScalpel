@@ -74,6 +74,11 @@ class InterpretFeaturesConfig(BaseModel):
         description="Truncate each document to this many characters in prompts.",
     )
     temperature: float = Field(default=0.0, ge=0.0)
+    trajectory_data_path: str | None = Field(
+        default=None,
+        description="Path to trajectory JSON. When provided, temporal classification "
+                    "and timing data are included in LLM prompts.",
+    )
     infra: exca.TaskInfra = exca.TaskInfra(version="1")
 
     _exclude_from_cls_uid: tp.ClassVar[tuple[str, ...]] = (
@@ -92,6 +97,7 @@ class InterpretFeaturesConfig(BaseModel):
         from geniesae.prompts import (
             build_explanation_prompt,
             build_scoring_prompt,
+            build_temporal_explanation_prompt,
             compute_interpretability_score,
             parse_scoring_response,
         )
@@ -137,6 +143,47 @@ class InterpretFeaturesConfig(BaseModel):
         llm = LLMClient(model=self.llm_model, base_url=self.vllm_base_url, **self.vllm_kwargs)
 
         # ------------------------------------------------------------------
+        # 3b. Load temporal data (if configured)
+        # ------------------------------------------------------------------
+        temporal_profiles: dict[int, tp.Any] | None = None
+        trajectory_data: dict | None = None
+
+        if self.trajectory_data_path is not None:
+            from geniesae.temporal_classifier import TemporalClassifier
+
+            traj_path = Path(self.trajectory_data_path)
+            if not traj_path.exists():
+                raise FileNotFoundError(
+                    f"Trajectory data file not found: {traj_path}"
+                )
+
+            with open(traj_path) as f:
+                trajectory_data = json.load(f)
+
+            # Determine layer from trajectory metadata or top-examples metadata
+            traj_meta = trajectory_data.get("metadata", {})
+            layer = traj_meta.get("layer")
+            if layer is None:
+                # Try to infer from the layers dict (use first available)
+                layers_data = trajectory_data.get("layers", {})
+                if layers_data:
+                    layer = int(next(iter(layers_data)))
+                else:
+                    logger.warning(
+                        "Trajectory data has no layer info; "
+                        "temporal classification disabled."
+                    )
+
+            if layer is not None:
+                classifier = TemporalClassifier()
+                temporal_profiles = classifier.classify(trajectory_data, layer)
+                print(
+                    f"[InterpretFeatures] Temporal classification: "
+                    f"{len(temporal_profiles)} features classified for layer {layer}",
+                    flush=True,
+                )
+
+        # ------------------------------------------------------------------
         # 4. Determine which features to interpret
         # ------------------------------------------------------------------
         if self.features is not None:
@@ -176,6 +223,8 @@ class InterpretFeaturesConfig(BaseModel):
         # before any LLM calls.
         active_keys: list[str] = []
         explanation_prompts: list[list[dict]] = []
+        # Track which features used temporal prompts (feature key -> TemporalProfile)
+        temporal_prompt_used: dict[str, tp.Any] = {}
         # Per-feature scoring metadata, built now so we only need
         # the explanation text to construct the scoring prompt later.
         scoring_meta: list[dict] = []
@@ -202,7 +251,49 @@ class InterpretFeaturesConfig(BaseModel):
             if not documents:
                 continue
 
-            explanation_prompts.append(build_explanation_prompt(documents))
+            # Decide whether to use temporal or standard prompt
+            feat_id = int(feat_key)
+            use_temporal = (
+                temporal_profiles is not None
+                and feat_id in temporal_profiles
+            )
+
+            if use_temporal:
+                from dataclasses import asdict
+
+                profile = temporal_profiles[feat_id]
+                temporal_summary = asdict(profile)
+                temporal_summary.pop("feature_id", None)
+                temporal_summary.pop("category", None)
+
+                # Extract NDS values and activating tokens from top entries
+                nds_values: list[float] = []
+                activating_tokens: list[str] = []
+                for entry in top_entries:
+                    if entry.get("example_id", -1) >= dataset_size:
+                        continue
+                    nds_values.append(float(entry.get("nds", 0.0)))
+                    activating_tokens.append(str(entry.get("activating_token", "")))
+
+                explanation_prompts.append(
+                    build_temporal_explanation_prompt(
+                        documents=documents,
+                        temporal_category=profile.category,
+                        temporal_summary=temporal_summary,
+                        nds_values=nds_values,
+                        activating_tokens=activating_tokens,
+                    )
+                )
+                temporal_prompt_used[feat_key] = profile
+            else:
+                if temporal_profiles is not None and feat_id not in temporal_profiles:
+                    logger.warning(
+                        "Feature %s not in trajectory data; "
+                        "falling back to standard prompt.",
+                        feat_key,
+                    )
+                explanation_prompts.append(build_explanation_prompt(documents))
+
             active_keys.append(feat_key)
 
             # Pre-build scoring data
@@ -284,7 +375,7 @@ class InterpretFeaturesConfig(BaseModel):
                         "Feature %s: failed to parse scoring response: %r",
                         feat_key, scoring_responses[i],
                     )
-                    results_features[feat_key] = {
+                    result_entry: dict[str, tp.Any] = {
                         "explanation": explanation,
                         "interpretability_score": 0.0,
                         "predicted_indices": None,
@@ -292,12 +383,23 @@ class InterpretFeaturesConfig(BaseModel):
                     }
                 else:
                     score = compute_interpretability_score(predicted, gt, total)
-                    results_features[feat_key] = {
+                    result_entry = {
                         "explanation": explanation,
                         "interpretability_score": score,
                         "predicted_indices": sorted(predicted),
                         "ground_truth_indices": sorted(gt),
                     }
+
+                # Add temporal fields when temporal prompt was used
+                if feat_key in temporal_prompt_used:
+                    profile = temporal_prompt_used[feat_key]
+                    result_entry["temporal_category"] = profile.category
+                    result_entry["is_timing_feature"] = profile.category in (
+                        "midpoint_exclusive",
+                        "midpoint_transition",
+                    )
+
+                results_features[feat_key] = result_entry
 
             print(
                 f"[InterpretFeatures] Batch done: features "
@@ -308,13 +410,17 @@ class InterpretFeaturesConfig(BaseModel):
         # ------------------------------------------------------------------
         # 6. Write results JSON
         # ------------------------------------------------------------------
+        output_metadata: dict[str, tp.Any] = {
+            "llm_model": self.llm_model,
+            "top_examples_path": self.top_examples_path,
+            "num_scoring_examples": self.num_scoring_examples,
+            "num_features_interpreted": len(results_features),
+        }
+        if self.trajectory_data_path is not None:
+            output_metadata["trajectory_data_path"] = self.trajectory_data_path
+
         output = {
-            "metadata": {
-                "llm_model": self.llm_model,
-                "top_examples_path": self.top_examples_path,
-                "num_scoring_examples": self.num_scoring_examples,
-                "num_features_interpreted": len(results_features),
-            },
+            "metadata": output_metadata,
             "features": results_features,
         }
 

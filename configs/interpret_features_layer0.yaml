@@ -1,5 +1,5 @@
 # Interpret features for Layer 0 (trajectory analysis)
-top_examples_path: "./experiments/top_examples/genie/layer_00_top_examples.json"
+top_examples_path: "./experiments/results/top_examples/genie/layer_00_top_examples.json"
 llm_model: "Qwen/Qwen2.5-32B-Instruct-AWQ"
 vllm_base_url: null
 batch_size: 128

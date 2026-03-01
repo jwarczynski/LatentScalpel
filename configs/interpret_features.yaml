@@ -22,7 +22,7 @@
 # =============================================================================
 
 # -- Input --------------------------------------------------------------------
-top_examples_path: "./experiments/top_examples/genie/layer_01_top_examples.json"
+top_examples_path: "./experiments/results/top_examples/genie/layer_01_top_examples.json"
 
 # -- LLM settings -------------------------------------------------------------
 llm_model: "Qwen/Qwen2.5-32B-Instruct-AWQ"
