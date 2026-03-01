@@ -28,6 +28,10 @@ genie_layer_idx: 0
 t5_layer_idx: 0
 
 # -- Dataset ------------------------------------------------------------------
+# NOTE: dataset_split is metadata only (correlation reads from activation_dir,
+# not HF directly). It should reflect the split the activations came from.
+# Currently using train activations. Ideally, post-training analysis should
+# use validation-split activations.
 dataset_split: "train"
 max_samples: 100000
 

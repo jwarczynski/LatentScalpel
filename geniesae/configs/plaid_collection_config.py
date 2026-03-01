@@ -44,6 +44,9 @@ class PlaidCollectionConfig(BaseModel):
 
     # -- Dataset --------------------------------------------------------------
     dataset_name: str = "openwebtext"
+    # NOTE: openwebtext only has a "train" split. For activation collection
+    # this is correct (feeds SAE training). For other stages, use skip_samples
+    # to carve out a disjoint held-out slice.
     dataset_split: str = "train"
     max_samples: int = Field(default=10000, gt=0)
     skip_samples: int = Field(

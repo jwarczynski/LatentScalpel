@@ -22,6 +22,12 @@ activation_dir: "./experiments/activations/genie/xsum/train"
 layer_idx: 1
 
 # -- Dataset ------------------------------------------------------------------
+# NOTE: dataset_split must match the split used during activation collection
+# (the activation_dir above). Example IDs in the activation store are indices
+# into this HuggingFace split. Currently using train because activations were
+# collected from train. Ideally, post-training stages should use validation-
+# split activations — collect them first, then point activation_dir and
+# dataset_split to the validation set.
 dataset_name: "xsum"
 dataset_split: "train"
 

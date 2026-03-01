@@ -38,6 +38,8 @@ class T5CollectionConfig(BaseModel):
 
     # -- Dataset --------------------------------------------------------------
     dataset_name: str = "xsum"
+    # NOTE: Train split is correct here — activation collection feeds SAE
+    # training. All other pipeline stages must use the validation split.
     dataset_split: str = "train"
     max_samples: int = Field(default=10000, gt=0)
     max_length: int = Field(default=512, gt=0)

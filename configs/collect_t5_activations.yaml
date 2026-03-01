@@ -21,6 +21,9 @@
 model_name: "sysresearch101/t5-large-finetuned-xsum"
 
 # -- Dataset ------------------------------------------------------------------
+# NOTE: Train split is correct here — activation collection feeds SAE training.
+# All other pipeline stages (top-examples, interpretation, evaluation,
+# correlation, trajectory) must use the validation split.
 dataset_name: "xsum"
 dataset_split: "train"
 max_samples: 10000

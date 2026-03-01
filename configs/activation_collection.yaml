@@ -12,7 +12,7 @@
 # =============================================================================
 
 # -- Model --------------------------------------------------------------------
-model_checkpoint_path: "GENIE_ckpt-XSum"
+model_checkpoint_path: "models/genie/GENIE_ckpt-XSum"
 model_arch: "s2s_CAT"
 in_channel: 128
 model_channels: 128
@@ -26,13 +26,16 @@ learn_sigma: false
 fix_encoder: false
 
 # -- Dataset ------------------------------------------------------------------
+# NOTE: Train split is correct here — activation collection feeds SAE training.
+# All other pipeline stages (top-examples, interpretation, evaluation,
+# correlation, trajectory) must use the validation split.
 dataset_name: "xsum"
 dataset_split: "train"
 max_samples: 10000
 
 # To collect val/test activations, run again with different split and output_dir:
-#   --dataset_split=validation --output_dir=./experiments/activations_val
-#   --dataset_split=test --output_dir=./experiments/activations_test
+#   --dataset_split=validation --output_dir=./experiments/activations/genie/xsum/validation
+#   --dataset_split=test --output_dir=./experiments/activations/genie/xsum/test
 
 # -- Diffusion ----------------------------------------------------------------
 diffusion_steps: 2000
@@ -41,7 +44,7 @@ diffusion_timesteps: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
 
 # -- Collection ---------------------------------------------------------------
 batch_size: 16
-output_dir: "./experiments/activations"
+output_dir: "./experiments/activations/genie/xsum/train"
 force_overwrite: false
 device: "cuda:0"
 random_seed: 42

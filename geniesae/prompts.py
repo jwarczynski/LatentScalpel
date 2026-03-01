@@ -18,7 +18,7 @@ _EXPLANATION_SYSTEM_MESSAGE = (
     "of documents on which the neuron activates, in order from most strongly "
     "activating to least strongly activating. Look at the parts of the document "
     "the neuron activates for and summarize in a single sentence what the neuron "
-    "is activating on. Try not to be overly specific in your explanation. Note "
+    "is activating on. Note "
     "that some neurons will activate only on specific words or substrings, but "
     "others will activate on most/all words in a sentence provided that sentence "
     "contains some particular concept. Your explanation should cover most or all "
@@ -57,12 +57,80 @@ def build_explanation_prompt(documents: list[str]) -> list[dict]:
         List of two message dicts ``[{"role": "system", ...}, {"role": "user", ...}]``.
     """
     numbered = "\n".join(f"{i}. {doc}" for i, doc in enumerate(documents, start=1))
-    user_content = f"The activating documents are given below:\n\n{numbered}"
+    user_content = (
+        "IMPORTANT: All examples below come from the xsum dataset (news articles "
+        "and summaries). Because every example is from this domain, explanations "
+        "such as \"patterns describing political events\" or \"articles/news\" are "
+        "insufficiently specific. Your explanation must identify a distinguishing "
+        "sub-pattern within the dataset (e.g., \"sentences containing direct quotes "
+        "from named political figures\" rather than \"political news\").\n\n"
+        f"The activating documents are given below:\n\n{numbered}"
+    )
 
     return [
         {"role": "system", "content": _EXPLANATION_SYSTEM_MESSAGE},
         {"role": "user", "content": user_content},
     ]
+
+def build_temporal_explanation_prompt(
+    documents: list[str],
+    temporal_category: str,
+    temporal_summary: dict,
+    nds_values: list[float],
+    activating_tokens: list[str],
+) -> list[dict]:
+    """Build an explanation prompt enriched with temporal context.
+
+    The prompt provides the LLM with temporal classification and activation
+    timing data as evidence, without asserting what the feature encodes.
+    The LLM determines the explanation based on the evidence alone.
+
+    Args:
+        documents: Top-activating documents with ``<< >>`` markers, ordered
+            from most to least strongly activating.
+        temporal_category: Classification category (e.g. ``"midpoint_exclusive"``).
+        temporal_summary: Dict of temporal statistics (e.g. ``peak_nds``,
+            ``mean_activation``, ``coefficient_of_variation``, etc.).
+        nds_values: Per-example normalized denoising step values in ``[0, 1]``,
+            one per document.
+        activating_tokens: Per-example activating token strings, one per document.
+
+    Returns:
+        List of two message dicts ``[{"role": "system", ...}, {"role": "user", ...}]``.
+    """
+    # Build per-example lines with NDS and activating token annotations.
+    example_lines: list[str] = []
+    for i, doc in enumerate(documents, start=1):
+        nds_str = f"{nds_values[i - 1]:.3f}" if i - 1 < len(nds_values) else "N/A"
+        token_str = activating_tokens[i - 1] if i - 1 < len(activating_tokens) else "N/A"
+        example_lines.append(
+            f"{i}. [NDS={nds_str}, activating_token=\"{token_str}\"] {doc}"
+        )
+
+    # Format temporal summary key-value pairs.
+    summary_lines = "\n".join(f"  {k}: {v}" for k, v in temporal_summary.items())
+
+    user_content = (
+        "IMPORTANT: All examples below come from the xsum dataset (news articles "
+        "and summaries). Because every example is from this domain, explanations "
+        "such as \"patterns describing political events\" or \"articles/news\" are "
+        "insufficiently specific. Your explanation must identify a distinguishing "
+        "sub-pattern within the dataset (e.g., \"sentences containing direct quotes "
+        "from named political figures\" rather than \"political news\").\n\n"
+        f"Temporal classification for this feature: {temporal_category}\n"
+        f"Temporal statistics:\n{summary_lines}\n\n"
+        "Each example is annotated with the normalized denoising step (NDS) at "
+        "which it was collected and the specific token on which the feature "
+        "activated. Use this evidence to inform your explanation.\n\n"
+        "The activating documents are given below:\n\n"
+        + "\n".join(example_lines)
+    )
+
+    return [
+        {"role": "system", "content": _EXPLANATION_SYSTEM_MESSAGE},
+        {"role": "user", "content": user_content},
+    ]
+
 
 
 def build_scoring_prompt(explanation: str, examples: list[str]) -> list[dict]:

@@ -12,6 +12,8 @@
 # =============================================================================
 
 # -- Input --------------------------------------------------------------------
+# NOTE: SAE training uses train-split activations. This is one of only two
+# stages (along with activation collection) that should use the train split.
 activation_dir: "./experiments/activations/t5/xsum/train"
 val_activation_dir: "./experiments/activations/t5/xsum/validation"
 test_activation_dir: null

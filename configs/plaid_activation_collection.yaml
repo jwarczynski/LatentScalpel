@@ -22,6 +22,9 @@ gamma_0: -3.0
 gamma_1: 6.0
 
 # -- Dataset ------------------------------------------------------------------
+# NOTE: Train split is correct here — activation collection feeds SAE training.
+# openwebtext only has a "train" split; for validation, use skip_samples to
+# carve out a disjoint slice (see plaid_activation_collection_val.yaml).
 dataset_name: "openwebtext"
 dataset_split: "train"
 max_samples: 10000
@@ -31,11 +34,12 @@ seq_len: 256
 diffusion_t_values: [0.05, 0.15, 0.25, 0.35, 0.5, 0.65, 0.75, 0.85, 0.95]
 
 # -- Collection ---------------------------------------------------------------
-batch_size: 8
-output_dir: "./experiments/plaid_activations"
+batch_size: 2
+output_dir: "./experiments/activations/plaid/openwebtext/train"
 force_overwrite: false
 device: "cuda:0"
 random_seed: 42
+layers: [0, 4, 10, 14, 20, 23]
 
 # -- Exca infra ---------------------------------------------------------------
 infra:
@@ -44,6 +48,6 @@ infra:
   cluster: null
   gpus_per_node: 1
   cpus_per_task: 4
-  mem_gb: 64
+  mem_gb: 128
   timeout_min: 720
   slurm_partition: plgrid-gpu-a100

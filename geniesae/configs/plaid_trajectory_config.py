@@ -44,15 +44,22 @@ class PlaidTrajectoryConfig(BaseModel):
 
     # -- Dataset --------------------------------------------------------------
     dataset_name: str = "openwebtext"
+    # NOTE: openwebtext only has a "train" split. For trajectory analysis we
+    # should ideally use a held-out set — use skip_samples to carve out a
+    # disjoint slice.
     dataset_split: str = "train"
     max_samples: int = Field(default=50, gt=0)
     seq_len: int = Field(default=256, gt=0)
 
     # -- Diffusion ------------------------------------------------------------
-    sampling_timesteps: int = Field(default=4096, gt=0)
+    # NOTE: Standardised to 256 steps to match plaid_evaluation and other
+    # PLAID pipelines.  With 256 steps we record every step (subsample=1)
+    # giving 256 trajectory data-points — sufficient resolution without
+    # the memory/time cost of 4096 steps.
+    sampling_timesteps: int = Field(default=256, gt=0)
     score_temp: float = 0.9
     timestep_subsample: int = Field(
-        default=40, gt=0,
+        default=1, gt=0,
         description="Sample every N-th step from the full trajectory.",
     )
 
@@ -207,9 +214,10 @@ class PlaidTrajectoryConfig(BaseModel):
 
                         if t_val > 1.0 / self.sampling_timesteps:
                             c = -torch.expm1(gamma_s - gamma_t_d)
+                            c = c[:, None, None]  # (bs, 1, 1) for broadcasting
                             z_new = (1 - c) * alpha_sq_s.sqrt()[:, None, None] / alpha_sq_t.sqrt()[:, None, None] * z.double()
                             z_new += c * (alpha_sq_s.sqrt()[:, None, None] * x_reconst_d)
-                            z_new += (c * (1 - alpha_sq_s)).sqrt()[:, None, None] * torch.randn_like(z).double()
+                            z_new += (c * (1 - alpha_sq_s[:, None, None])).sqrt() * torch.randn_like(z).double()
                             z = z_new.float()
 
                         # Record SAE features

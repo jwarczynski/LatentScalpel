@@ -43,7 +43,9 @@ class CorrelationConfig(BaseModel):
 
     # -- Dataset --------------------------------------------------------------
     dataset_name: str = "xsum"
-    dataset_split: str = "validation"
+    # NOTE: dataset_split is metadata only (correlation reads from activation
+    # dirs, not HF directly). Should reflect the split activations came from.
+    dataset_split: str = "train"
     max_samples: int | None = Field(default=None, description="Max examples (None=all)")
 
     # -- Correlation ----------------------------------------------------------

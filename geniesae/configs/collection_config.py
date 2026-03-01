@@ -39,6 +39,9 @@ class ActivationCollectionConfig(BaseModel):
 
     # Dataset
     dataset_name: str = "xsum"
+    # NOTE: Train split is correct here — activation collection feeds SAE
+    # training. All other pipeline stages (top-examples, interpretation,
+    # evaluation, correlation, trajectory) must use the validation split.
     dataset_split: str = "train"
     max_samples: int = Field(default=10000, gt=0)
 

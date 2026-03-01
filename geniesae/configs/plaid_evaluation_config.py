@@ -54,6 +54,9 @@ class PlaidEvaluationConfig(BaseModel):
 
     # -- Dataset --------------------------------------------------------------
     dataset_name: str = "openwebtext"
+    # NOTE: openwebtext only has a "train" split. For evaluation we should
+    # ideally use a held-out set — use skip_samples to carve out a disjoint
+    # slice, or switch to a dataset with a proper validation split.
     dataset_split: str = "train"
     max_samples: int = Field(default=200, gt=0)
     seq_len: int = Field(default=256, gt=0)
@@ -272,13 +275,55 @@ class PlaidEvaluationConfig(BaseModel):
         )
         return loss.item()
 
+    def _reverse_step(
+        self, z, x_reconst_raw, gamma_t, gamma_s, t_val, score_temp,
+    ):
+        """Inline VDM reverse step (t -> s) using already-computed x_reconst.
+
+        Avoids calling p_sample_step (which does its own forward pass).
+        """
+        import torch
+
+        alpha_squared_t = torch.sigmoid(-gamma_t)
+        sigma_squared_t = torch.sigmoid(gamma_t)
+        alpha_squared_s = torch.sigmoid(-gamma_s)
+        alpha_t = alpha_squared_t.sqrt()
+        sigma_t = sigma_squared_t.sqrt()
+
+        x_reconst = x_reconst_raw.double()
+
+        # Score temperature
+        epsilon_pred = (z.double() - alpha_t[:, None, None] * x_reconst) / sigma_t[:, None, None]
+        epsilon_pred /= score_temp
+        x_reconst = (z.double() - sigma_t[:, None, None] * epsilon_pred) / alpha_t[:, None, None]
+
+        if t_val > 0:
+            c = -torch.expm1(gamma_s - gamma_t)  # (bs,)
+            c = c[:, None, None]  # (bs, 1, 1)
+            alpha_s = alpha_squared_s.sqrt()[:, None, None]
+            alpha_t_exp = alpha_squared_t.sqrt()[:, None, None]
+            one_minus_alpha_sq_s = (1 - alpha_squared_s)[:, None, None]
+
+            z_new = (1 - c) * alpha_s / alpha_t_exp * z.double()
+            z_new += c * alpha_s * x_reconst
+            z_new += (c * one_minus_alpha_sq_s).sqrt() * torch.randn_like(z).double()
+            z = z_new.float()
+
+        return z
+
     def _run_iterative(self, model, helper, saes, input_ids_all, device, wandb_run):
-        """Full reverse diffusion chain evaluation."""
+        """Full reverse diffusion chain evaluation.
+
+        Runs the model forward once per chain per step (baseline + per-layer
+        patched), captures logits for loss, and performs the VDM reverse step
+        inline using the same x_reconst — no double forward pass.
+        """
         import torch
 
         layer_indices = sorted(saes.keys())
         T = self.sampling_timesteps
         embedding_matrix_module = helper.embedding_matrix_module
+        score_temp = helper.score_temp
 
         print(f"[PlaidEval:iterative] T={T}, layers={layer_indices}", flush=True)
 
@@ -305,11 +350,13 @@ class PlaidEvaluationConfig(BaseModel):
 
             for step_idx in range(T):
                 t_val = 1.0 - step_idx / T
-                s_val = 1.0 - (step_idx + 1) / T
-                t = torch.full((bs,), t_val, device=device)
-                s = torch.full((bs,), max(s_val, 0.0), device=device)
+                s_val = max(1.0 - (step_idx + 1) / T, 0.0)
 
-                gamma_t = helper.get_gamma(t)
+                # Batch tensors for get_gamma / model forward
+                t_batch = torch.full((bs,), t_val, device=device)
+                s_batch = torch.full((bs,), s_val, device=device)
+                gamma_t = helper.get_gamma(t_batch)
+                gamma_s = helper.get_gamma(s_batch)
 
                 # --- Baseline (no patching) ---
                 with torch.no_grad():
@@ -318,6 +365,9 @@ class PlaidEvaluationConfig(BaseModel):
                         1.0, x_sc_bl,
                     )
                     x_sc_bl = x_reconst_bl.clone().detach()
+                    z_bl = self._reverse_step(
+                        z_bl, x_reconst_bl, gamma_t, gamma_s, t_val, score_temp,
+                    )
 
                 # --- Per-layer patched ---
                 logits_patched = {}
@@ -329,17 +379,13 @@ class PlaidEvaluationConfig(BaseModel):
                             embedding_matrix, 1.0, x_sc_patched[li],
                         )
                         x_sc_patched[li] = x_reconst_p.clone().detach()
+                        z_patched[li] = self._reverse_step(
+                            z_patched[li], x_reconst_p, gamma_t, gamma_s,
+                            t_val, score_temp,
+                        )
                     for h in hooks:
                         h.remove()
                     logits_patched[li] = logits_p
-
-                # --- Reverse step for all chains ---
-                with torch.no_grad():
-                    z_bl, _ = helper.p_sample_step(z_bl, t, s, x_sc_bl)
-                    for li in layer_indices:
-                        z_patched[li], _ = helper.p_sample_step(
-                            z_patched[li], t, s, x_sc_patched[li],
-                        )
 
                 # --- Log losses ---
                 if step_idx % log_interval == 0 or step_idx == T - 1:

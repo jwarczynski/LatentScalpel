@@ -135,6 +135,9 @@ class TopExamplesConfig(BaseModel):
     activation_dir: str = Field(min_length=1)
     layer_idx: int = Field(ge=0)
     dataset_name: str = "xsum"
+    # NOTE: dataset_split must match the split used during activation collection.
+    # Example IDs in the activation store are indices into this HF split.
+    # Ideally, post-training stages should use validation-split activations.
     dataset_split: str = "train"
     top_k: int = Field(default=20, gt=0)
     unique_examples: bool = Field(

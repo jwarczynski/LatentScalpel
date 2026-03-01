@@ -27,6 +27,9 @@ sae_checkpoint_dir: "./experiments/sae_checkpoints/plaid"
 layers: [0, 23]
 
 # -- Dataset ------------------------------------------------------------------
+# NOTE: openwebtext only has a "train" split. For trajectory analysis we
+# should ideally use a held-out set. Consider using skip_samples to carve
+# out a disjoint slice from the training data.
 dataset_name: "openwebtext"
 dataset_split: "train"
 max_samples: null

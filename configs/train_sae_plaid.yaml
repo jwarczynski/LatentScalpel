@@ -12,8 +12,10 @@
 # =============================================================================
 
 # -- Input --------------------------------------------------------------------
-activation_dir: "./experiments/plaid_activations"
-val_activation_dir: "./experiments/plaid_activations_val"
+# NOTE: SAE training uses train-split activations. This is one of only two
+# stages (along with activation collection) that should use the train split.
+activation_dir: "./experiments/activations/plaid/openwebtext/train"
+val_activation_dir: "./experiments/activations/plaid/openwebtext/validation"
 test_activation_dir: null
 
 # -- Layer selection (required) -----------------------------------------------
@@ -53,7 +55,7 @@ pin_memory: true
 matmul_precision: "high"
 
 # -- Checkpoint resume --------------------------------------------------------
-resume_from: "./experiments/plaid_sae_checkpoints"
+resume_from: "./experiments/sae_checkpoints/plaid"
 
 # -- Best checkpoint tracking -------------------------------------------------
 save_best: true
@@ -70,7 +72,7 @@ wandb_run_name: null
 use_wandb: true
 
 # -- Output -------------------------------------------------------------------
-output_dir: "./experiments/plaid_sae_checkpoints"
+output_dir: "./experiments/sae_checkpoints/plaid"
 random_seed: 42
 
 # -- Exca infra ---------------------------------------------------------------

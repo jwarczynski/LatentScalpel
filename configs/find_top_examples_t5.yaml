@@ -14,6 +14,10 @@
 sae_checkpoint_path: "./experiments/sae_checkpoints/t5/layer_00_best.ckpt"
 activation_dir: "./experiments/activations/t5/xsum/train"
 layer_idx: 0
+# NOTE: dataset_split must match the split used during activation collection
+# (activation_dir above). Example IDs are indices into this HF split.
+# Currently using train because activations were collected from train.
+# Ideally, post-training stages should use validation-split activations.
 dataset_name: "xsum"
 dataset_split: "train"
 top_k: 30

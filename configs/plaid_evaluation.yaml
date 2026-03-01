@@ -23,11 +23,14 @@ gamma_0: -3.0
 gamma_1: 6.0
 
 # -- SAE checkpoints ---------------------------------------------------------
-sae_checkpoint_dir: "./experiments/plaid_sae_checkpoints"
+sae_checkpoint_dir: "./experiments/sae_checkpoints/plaid"
 sae_layers: [0, 23]
 prefer_best: true
 
 # -- Dataset ------------------------------------------------------------------
+# NOTE: openwebtext only has a "train" split. For evaluation we should ideally
+# use a held-out set. Use skip_samples to carve out a disjoint slice, or
+# switch to a dataset with a proper validation split.
 dataset_name: "openwebtext"
 dataset_split: "train"
 max_samples: 200
@@ -54,6 +57,6 @@ infra:
   cluster: null
   gpus_per_node: 1
   cpus_per_task: 4
-  mem_gb: 128
-  timeout_min: 2800
+  mem_gb: 64
+  timeout_min: 720
   slurm_partition: plgrid-gpu-a100
