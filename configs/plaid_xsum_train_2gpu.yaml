@@ -1,0 +1,62 @@
+# Real training: 2x A100, unconditional mode, 10 epochs
+weights_path: "models/plaid/plaid1b_weights"
+dim: 2048
+embed_dim: 16
+n_blocks: 24
+n_heads: 32
+vocab_size: 32768
+gamma_0: -3.0
+gamma_1: 6.0
+
+data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
+seq_len: 1024
+max_summary_len: 64
+tokenizer_path: "models/plaid/plaid1b_weights/tokenizer.json"
+
+batch_size: 4
+learning_rate: 1.0e-4
+weight_decay: 0.01
+betas: [0.9, 0.999]
+num_epochs: 10
+warmup_steps: 1000
+bias_warmup_steps: 5000
+target_bias_scale: 1.0
+self_cond_prob: 0.25
+reconst_bs: null
+clip_quantile: 0.95
+freeze_layers: null
+num_workers: 0
+
+training_mode: "unconditional"
+
+strategy: "ddp"
+num_gpus: 2
+precision: "bf16-mixed"
+gradient_checkpointing: true
+
+sampling_timesteps: 256
+score_temp: 0.9
+guidance_scale: 1.0
+sampler: "inpainting"
+num_eval_samples: 5
+
+use_wandb: true
+wandb_project: "plaid-xsum"
+wandb_run_name: "unconditional-2gpu-bs4"
+log_interval: 50
+noise_schedule_log_interval: 500
+
+output_dir: "./experiments/plaid_xsum"
+resume_from: null
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_xsum_train"
+  cluster: slurm
+  gpus_per_node: 2
+  tasks_per_node: 2
+  cpus_per_task: 4
+  mem_gb: 80
+  timeout_min: 1440
+  slurm_partition: plgrid-gpu-a100
+  slurm_use_srun: true
