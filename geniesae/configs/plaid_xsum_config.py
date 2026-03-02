@@ -165,14 +165,21 @@ class PlaidXSumConfig(BaseModel):
         output_dir = Path(self.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Each run gets its own checkpoint subfolder (by run name or timestamp)
+        import datetime
+
+        run_tag = self.wandb_run_name or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        ckpt_dir = output_dir / "checkpoints" / run_tag
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+
         callbacks = [
             ModelCheckpoint(
-                dirpath=str(output_dir / "checkpoints"),
+                dirpath=str(ckpt_dir),
                 filename="last",
                 save_last=True,
             ),
             ModelCheckpoint(
-                dirpath=str(output_dir / "checkpoints"),
+                dirpath=str(ckpt_dir),
                 filename="best-{epoch}-{val_loss:.4f}",
                 monitor="val/loss",
                 mode="min",
