@@ -82,6 +82,7 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         num_eval_samples: int = 5,
         log_interval: int = 50,
         noise_schedule_log_interval: int = 500,
+        tokenizer_path: str | None = None,
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
@@ -109,6 +110,8 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         self.num_eval_samples = num_eval_samples
         self.log_interval = log_interval
         self.noise_schedule_log_interval = noise_schedule_log_interval
+        self.tokenizer_path = tokenizer_path
+        self._tokenizer = None  # lazy-loaded
 
         # Build PLAID modules
         self.diffusion_model = DiffusionModel(dim, embed_dim, n_blocks, n_heads, vocab_size).float()
@@ -438,6 +441,132 @@ class PlaidXSumTrainingModule(pl.LightningModule):
 
         # Log noise schedule curve
         self._log_noise_schedule()
+
+        # Generate and log text samples (only on rank 0 in DDP)
+        if self.global_rank == 0:
+            try:
+                self._generate_and_log_samples()
+            except Exception as e:
+                logger.warning("Sample generation failed: %s", e)
+
+    def _generate_and_log_samples(self) -> None:
+        """Generate text samples using InpaintingSampler and log to wandb + stdout."""
+        import tokenizers as _tok
+
+        from geniesae.plaid_samplers import InpaintingSampler
+
+        # Lazy-load tokenizer
+        if self._tokenizer is None:
+            tok_path = self.tokenizer_path
+            if tok_path is None:
+                # Try to get from datamodule
+                dm = getattr(self.trainer, "datamodule", None)
+                if dm is not None and getattr(dm, "tokenizer_path", None):
+                    tok_path = dm.tokenizer_path
+            if tok_path is None:
+                logger.warning("No tokenizer_path available — skipping sample generation")
+                return
+            self._tokenizer = _tok.Tokenizer.from_file(tok_path)
+            logger.info("Loaded tokenizer from %s for sample generation", tok_path)
+
+        tokenizer = self._tokenizer
+
+        # Get validation datamodule for samples
+        dm = getattr(self.trainer, "datamodule", None)
+        if dm is None or dm.val_dataset is None:
+            logger.warning("No validation dataset — skipping sample generation")
+            return
+
+        val_dataset = dm.val_dataset
+        sep_id = dm.sep_token_id
+        seq_len = dm.seq_len
+        n_samples = min(self.num_eval_samples, len(val_dataset))
+
+        # Build sampler
+        prefix_mode = "clean" if self.training_mode == "conditional" else "renoised"
+        sampler = InpaintingSampler(
+            model=self.diffusion_model,
+            noise_schedule=self.noise_schedule,
+            gamma_bounds=self.gamma_bounds,
+            embedding_matrix_module=self.embedding_matrix,
+            sampling_timesteps=self.sampling_timesteps,
+            score_temp=self.score_temp,
+            prefix_mode=prefix_mode,
+        )
+
+        # Collect samples
+        rows = []
+        epoch = self.current_epoch
+        logger.info("Generating %d text samples (epoch %d, %d steps, temp=%.2f)...",
+                     n_samples, epoch, self.sampling_timesteps, self.score_temp)
+
+        for i in range(n_samples):
+            sample = val_dataset[i]
+            token_ids = sample["token_ids"].unsqueeze(0).to(self.device)
+            boundary_idx = sample["boundary_idx"].unsqueeze(0).to(self.device)
+            attention_mask = sample["attention_mask"].unsqueeze(0).to(self.device)
+
+            bi = boundary_idx[0].item()
+            all_ids = token_ids[0].tolist()
+            real_len = int(attention_mask[0].sum().item())
+
+            # Decode article and reference
+            article_ids = all_ids[:bi]
+            summary_start = bi + 1
+            ref_ids = all_ids[summary_start:real_len]
+            article_text = tokenizer.decode(article_ids)
+            ref_text = tokenizer.decode(ref_ids) if ref_ids else "(none)"
+
+            # Generate
+            with torch.no_grad():
+                gen_ids = sampler.sample(
+                    article_token_ids=token_ids,
+                    boundary_idx=boundary_idx,
+                    seq_len=seq_len,
+                )
+
+            # Decode generated summary
+            gen_all = gen_ids[0].tolist()
+            gen_summary_ids = gen_all[summary_start:]
+            gen_clean = []
+            for tid in gen_summary_ids:
+                if tid == sep_id:
+                    break
+                gen_clean.append(tid)
+            gen_text = tokenizer.decode(gen_clean) if gen_clean else "(empty)"
+
+            rows.append({
+                "article": article_text[:300],
+                "reference": ref_text,
+                "generated": gen_text,
+            })
+
+            logger.info(
+                "--- Sample %d (epoch %d) ---\n"
+                "ARTICLE: %.200s...\n"
+                "REFERENCE: %s\n"
+                "GENERATED: %s",
+                i + 1, epoch, article_text, ref_text, gen_text,
+            )
+
+        # Log to wandb as a Table
+        if self.logger is not None:
+            try:
+                import wandb
+
+                table = wandb.Table(
+                    columns=["epoch", "idx", "article", "reference", "generated"],
+                    data=[
+                        [epoch, i, r["article"], r["reference"], r["generated"]]
+                        for i, r in enumerate(rows)
+                    ],
+                )
+                self.logger.experiment.log(
+                    {"val/generated_samples": table},
+                    step=self.global_step,
+                )
+            except Exception as e:
+                logger.warning("Failed to log wandb table: %s", e)
 
     def _log_noise_schedule(self) -> None:
         """Log the learned noise schedule gamma(t) curve."""

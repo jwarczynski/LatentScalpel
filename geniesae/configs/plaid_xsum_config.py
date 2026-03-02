@@ -157,6 +157,7 @@ class PlaidXSumConfig(BaseModel):
             num_eval_samples=self.num_eval_samples,
             log_interval=self.log_interval,
             noise_schedule_log_interval=self.noise_schedule_log_interval,
+            tokenizer_path=self.tokenizer_path,
         )
         training_module.load_pretrained_weights(self.weights_path)
 
