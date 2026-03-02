@@ -90,6 +90,11 @@ class PlaidXSumConfig(BaseModel):
     use_wandb: bool = True
     wandb_project: str = "plaid-xsum"
     wandb_run_name: str | None = None
+    # Set wandb_run_id to resume logging to an existing W&B run.
+    # When set, WandbLogger uses resume="must" so it fails loudly if the
+    # run doesn't exist.  The run ID is also used as the checkpoint
+    # subdirectory name so that checkpoints stay associated with their run.
+    wandb_run_id: str | None = None
     log_interval: int = Field(default=50, gt=0)
     noise_schedule_log_interval: int = Field(default=500, gt=0)
 
@@ -106,6 +111,7 @@ class PlaidXSumConfig(BaseModel):
         "use_wandb",
         "wandb_project",
         "wandb_run_name",
+        "wandb_run_id",
     )
 
     @infra.apply
@@ -165,10 +171,32 @@ class PlaidXSumConfig(BaseModel):
         output_dir = Path(self.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Each run gets its own checkpoint subfolder (by run name or timestamp)
+        # --- Logger (created early so we can use the run ID for ckpt dir) ---
+        wandb_logger = None
+        if self.use_wandb:
+            wandb_kwargs: dict[str, tp.Any] = dict(
+                project=self.wandb_project,
+                name=self.wandb_run_name,
+                save_dir=str(output_dir),
+            )
+            if self.wandb_run_id:
+                # Resume an existing W&B run — fails if the run doesn't exist.
+                wandb_kwargs["id"] = self.wandb_run_id
+                wandb_kwargs["resume"] = "must"
+            wandb_logger = WandbLogger(**wandb_kwargs)
+
+        # Checkpoint subdirectory: use wandb_run_id if resuming, otherwise
+        # the auto-generated wandb ID (available after logger init), or
+        # wandb_run_name, or a timestamp.  This keeps checkpoints tied to
+        # their W&B run for easy traceability.
         import datetime
 
-        run_tag = self.wandb_run_name or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        if self.wandb_run_id:
+            run_tag = self.wandb_run_id
+        elif wandb_logger is not None:
+            run_tag = wandb_logger.experiment.id
+        else:
+            run_tag = self.wandb_run_name or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         ckpt_dir = output_dir / "checkpoints" / run_tag
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -187,15 +215,6 @@ class PlaidXSumConfig(BaseModel):
                 auto_insert_metric_name=False,
             ),
         ]
-
-        # --- Logger ---
-        wandb_logger = None
-        if self.use_wandb:
-            wandb_logger = WandbLogger(
-                project=self.wandb_project,
-                name=self.wandb_run_name,
-                save_dir=str(output_dir),
-            )
 
         # --- Strategy ---
         strategy: str | pl.strategies.Strategy

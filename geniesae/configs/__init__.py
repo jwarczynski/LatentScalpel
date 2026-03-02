@@ -11,6 +11,10 @@ from geniesae.configs.plaid_trajectory_config import PlaidTrajectoryConfig
 from geniesae.configs.plaid_evaluation_config import PlaidEvaluationConfig
 from geniesae.configs.t5_collection_config import T5CollectionConfig
 from geniesae.configs.correlation_config import CorrelationConfig
+from geniesae.configs.intervention_config import InterventionConfig
+from geniesae.configs.schedule_experiment_config import ScheduleExperimentConfig
+from geniesae.configs.plaid_xsum_config import PlaidXSumConfig
+from geniesae.configs.plaid_xsum_eval_config import PlaidXSumEvalConfig
 
 __all__ = [
     "ActivationCollectionConfig",
@@ -24,4 +28,8 @@ __all__ = [
     "PlaidEvaluationConfig",
     "T5CollectionConfig",
     "CorrelationConfig",
+    "InterventionConfig",
+    "ScheduleExperimentConfig",
+    "PlaidXSumConfig",
+    "PlaidXSumEvalConfig",
 ]

@@ -253,6 +253,74 @@ def cmd_collect_plaid_trajectory(args: argparse.Namespace) -> None:
         result = config.apply()
         print(f"PLAID trajectory data saved to: {result}")
 
+def cmd_run_intervention(args: argparse.Namespace) -> None:
+    from geniesae.configs.intervention_config import InterventionConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = InterventionConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        result = config.apply()
+        print(f"Intervention results saved to: {result}")
+
+def cmd_run_schedule_experiment(args: argparse.Namespace) -> None:
+    from geniesae.configs.schedule_experiment_config import ScheduleExperimentConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = ScheduleExperimentConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        result = config.apply()
+        print(f"Schedule experiment results saved to: {result}")
+def cmd_run_schedule_experiment(args: argparse.Namespace) -> None:
+    from geniesae.configs.schedule_experiment_config import ScheduleExperimentConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = ScheduleExperimentConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        result = config.apply()
+        print(f"Schedule experiment results saved to: {result}")
+
+
+def cmd_finetune_plaid(args: argparse.Namespace) -> None:
+    from geniesae.configs import PlaidXSumConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = PlaidXSumConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        results = config.apply()
+        print("PLAID XSum fine-tuning complete.")
+
+def cmd_eval_plaid_xsum(args: argparse.Namespace) -> None:
+    from geniesae.configs import PlaidXSumEvalConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = PlaidXSumEvalConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        results = config.apply()
+        print(f"Evaluation complete. Output: {results.get('output_file', 'N/A')}")
+
+
+
+
 
 
 
@@ -366,6 +434,34 @@ def main() -> None:
     )
     _add_common_args(p_correlate)
     p_correlate.set_defaults(func=cmd_correlate_features)
+
+    p_intervention = subparsers.add_parser(
+        "run-intervention",
+        help="Run feature intervention experiment via activation patching",
+    )
+    _add_common_args(p_intervention)
+    p_intervention.set_defaults(func=cmd_run_intervention)
+
+    p_schedule = subparsers.add_parser(
+        "run-schedule-experiment",
+        help="Run denoising schedule modification experiment",
+    )
+    _add_common_args(p_schedule)
+    p_schedule.set_defaults(func=cmd_run_schedule_experiment)
+
+    p_finetune_plaid = subparsers.add_parser(
+        "finetune-plaid",
+        help="Fine-tune PLAID 1B on XSum summarization",
+    )
+    _add_common_args(p_finetune_plaid)
+    p_finetune_plaid.set_defaults(func=cmd_finetune_plaid)
+
+    p_eval_plaid_xsum = subparsers.add_parser(
+        "eval-plaid-xsum",
+        help="Evaluate fine-tuned PLAID on XSum (generate + ROUGE/BLEU/BERTScore)",
+    )
+    _add_common_args(p_eval_plaid_xsum)
+    p_eval_plaid_xsum.set_defaults(func=cmd_eval_plaid_xsum)
 
     args, overrides = parser.parse_known_args()
     args.overrides = overrides if overrides else None

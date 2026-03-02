@@ -1,0 +1,35 @@
+# Evaluate fine-tuned PLAID on XSum validation set.
+# Generates summaries, computes ROUGE/BLEU/BERTScore, saves to JSON.
+#
+# Run for clean mode:
+#   uv run python main.py eval-plaid-xsum configs/plaid_xsum_eval.yaml \
+#       --submit --prefix_mode clean
+#
+# Run for renoised mode:
+#   uv run python main.py eval-plaid-xsum configs/plaid_xsum_eval.yaml \
+#       --submit --prefix_mode renoised
+
+checkpoint: "./experiments/plaid_xsum/checkpoints/best-epoch=9-val_loss=0.0000.ckpt"
+
+data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
+seq_len: 1024
+max_summary_len: 64
+tokenizer_path: "models/plaid/plaid1b_weights/tokenizer.json"
+
+# "clean" or "renoised" — override via CLI: --prefix_mode renoised
+prefix_mode: "clean"
+sampling_timesteps: 256
+score_temp: 0.9
+num_samples: 1000
+
+output_dir: "./experiments/plaid_xsum/eval_results"
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_xsum_eval"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 40
+  timeout_min: 360
+  slurm_partition: plgrid-gpu-a100
