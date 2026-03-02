@@ -180,10 +180,11 @@ class PlaidXSumConfig(BaseModel):
             ),
             ModelCheckpoint(
                 dirpath=str(ckpt_dir),
-                filename="best-{epoch}-{val_loss:.4f}",
+                filename="best-epoch{epoch:02d}",
                 monitor="val/loss",
                 mode="min",
                 save_top_k=1,
+                auto_insert_metric_name=False,
             ),
         ]
 
