@@ -30,7 +30,7 @@ num_workers: 0
 training_mode: "unconditional"
 
 strategy: "ddp"
-num_gpus: 2
+num_gpus: 8
 precision: "bf16-mixed"
 gradient_checkpointing: true
 
@@ -42,7 +42,7 @@ num_eval_samples: 5
 
 use_wandb: true
 wandb_project: "plaid-xsum"
-wandb_run_name: "unconditional-2gpu-bs4"
+wandb_run_name: "vlb-fix-8gpu-bs4"
 log_interval: 50
 noise_schedule_log_interval: 500
 
@@ -53,10 +53,10 @@ infra:
   version: "1"
   folder: "./experiments/cache/plaid_xsum_train"
   cluster: slurm
-  gpus_per_node: 2
-  tasks_per_node: 2
+  gpus_per_node: 8
+  tasks_per_node: 8
   cpus_per_task: 4
-  mem_gb: 80
+  mem_gb: 200
   timeout_min: 1440
   slurm_partition: plgrid-gpu-a100
   slurm_use_srun: true
