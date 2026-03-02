@@ -58,6 +58,13 @@ class PlaidXSumEvalConfig(BaseModel):
     @infra.apply
     def apply(self) -> dict:
         """Generate summaries and compute metrics."""
+        import logging as _logging
+
+        _logging.basicConfig(
+            level=_logging.INFO,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        )
+
         import tokenizers
 
         from geniesae.plaid_samplers import InpaintingSampler
@@ -67,17 +74,20 @@ class PlaidXSumEvalConfig(BaseModel):
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         logger.info("Device: %s", device)
+        print(f"Device: {device}", flush=True)
 
         # Load tokenizer
         tokenizer = tokenizers.Tokenizer.from_file(self.tokenizer_path)
 
         # Load checkpoint
         logger.info("Loading checkpoint: %s", self.checkpoint)
+        print(f"Loading checkpoint: {self.checkpoint}", flush=True)
         module = PlaidXSumTrainingModule.load_from_checkpoint(
             self.checkpoint, map_location=device
         )
         module.eval()
         module.to(device)
+        print("Checkpoint loaded.", flush=True)
 
         # Build sampler
         sampler = InpaintingSampler(
@@ -108,6 +118,11 @@ class PlaidXSumEvalConfig(BaseModel):
         logger.info(
             "Generating %d summaries (prefix_mode=%s, steps=%d, temp=%.2f)",
             n, self.prefix_mode, self.sampling_timesteps, self.score_temp,
+        )
+        print(
+            f"Generating {n} summaries (prefix_mode={self.prefix_mode}, "
+            f"steps={self.sampling_timesteps}, temp={self.score_temp})",
+            flush=True,
         )
 
         predictions: list[str] = []
@@ -158,11 +173,14 @@ class PlaidXSumEvalConfig(BaseModel):
 
             if (i + 1) % 50 == 0:
                 logger.info("Generated %d / %d", i + 1, n)
+                print(f"Generated {i + 1} / {n}", flush=True)
 
         # Compute metrics
+        print("Generation complete. Computing metrics...", flush=True)
         evaluator = EvaluationModule(output_dir=self.output_dir)
         metrics = evaluator.evaluate(predictions, references)
         logger.info("Metrics: %s", metrics)
+        print(f"Metrics: {metrics}", flush=True)
 
         # Save everything
         out_dir = Path(self.output_dir)
