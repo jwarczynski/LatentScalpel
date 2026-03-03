@@ -186,17 +186,19 @@ class PlaidXSumConfig(BaseModel):
             wandb_logger = WandbLogger(**wandb_kwargs)
 
         # Checkpoint subdirectory: use wandb_run_id if resuming, otherwise
-        # the auto-generated wandb ID (available after logger init), or
         # wandb_run_name, or a timestamp.  This keeps checkpoints tied to
         # their W&B run for easy traceability.
+        # NOTE: We don't use wandb_logger.experiment.id here because accessing
+        # .experiment triggers wandb.init(), which causes issues in multi-GPU
+        # DDP where only rank 0 should init wandb.
         import datetime
 
         if self.wandb_run_id:
             run_tag = self.wandb_run_id
-        elif wandb_logger is not None:
-            run_tag = wandb_logger.experiment.id
+        elif self.wandb_run_name:
+            run_tag = self.wandb_run_name
         else:
-            run_tag = self.wandb_run_name or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            run_tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         ckpt_dir = output_dir / "checkpoints" / run_tag
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
