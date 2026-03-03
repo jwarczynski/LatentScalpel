@@ -250,6 +250,10 @@ class PlaidXSumConfig(BaseModel):
             strategy = "auto"
 
         # --- Trainer ---
+        # When overfitting on few batches, set log_every_n_steps=1 so
+        # training metrics actually appear in wandb.
+        log_every_n_steps = 1 if self.overfit_batches else 50
+
         trainer = pl.Trainer(
             max_epochs=self.num_epochs,
             accelerator="gpu",
@@ -261,6 +265,7 @@ class PlaidXSumConfig(BaseModel):
             default_root_dir=str(output_dir),
             gradient_clip_val=1.0,
             overfit_batches=self.overfit_batches,
+            log_every_n_steps=log_every_n_steps,
         )
 
         # --- Train ---
