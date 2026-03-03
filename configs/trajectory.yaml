@@ -48,17 +48,23 @@ top_k_to_record: 64
 device: "cuda:0"
 random_seed: 42
 output_path: "./experiments/results/genie/trajectory"
-checkpoint_interval: 100  # save checkpoint every 100 batches for resume
+checkpoint_interval: 50  # save checkpoint every 50 batches for resume
+
+# Job array parallelization: each job processes samples_per_job samples
+# XSum validation has 11332 samples. With ~150 samples/hour, use 150 per job.
+# This creates ~76 jobs, each running ~1 hour.
+sample_start: 0  # override via CLI for each job
+samples_per_job: 150  # ~1 hour per job
 
 # -- Exca infra ---------------------------------------------------------------
 infra:
-  version: "1"
+  version: "2"  # bumped for job array support
   folder: "./experiments/cache/trajectory"
   cluster: slurm
   gpus_per_node: 1
   cpus_per_task: 4
   mem_gb: 64
-  timeout_min: 2800
+  timeout_min: 90  # 1.5 hours max per job
   slurm_partition: plgrid-gpu-a100
   slurm_additional_parameters:
     exclude: "t0021"

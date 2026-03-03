@@ -177,7 +177,19 @@ def cmd_collect_trajectory(args: argparse.Namespace) -> None:
     data = _load_config_dict(args.config, args.overrides)
     config = TrajectoryConfig(**data)
 
-    if args.submit:
+    # Job array mode: submit multiple jobs with different sample ranges
+    if hasattr(args, 'num_jobs') and args.num_jobs and args.num_jobs > 1:
+        samples_per_job = config.samples_per_job or 150
+        print(f"Submitting {args.num_jobs} jobs, {samples_per_job} samples each...")
+        
+        with config.infra.job_array() as job_array:
+            for i in range(args.num_jobs):
+                sample_start = i * samples_per_job
+                job_config = config.infra.clone_obj({"sample_start": sample_start})
+                job_array.append(job_config)
+        
+        print(f"Job array submitted. Check status with: squeue -u $USER")
+    elif args.submit:
         config.infra.job()
         print(f"Job submitted. Status: {config.infra.status()}")
     else:
@@ -398,6 +410,10 @@ def main() -> None:
         help="Collect SAE feature activations along the full denoising trajectory",
     )
     _add_common_args(p_trajectory)
+    p_trajectory.add_argument(
+        "--num-jobs", type=int, default=None,
+        help="Number of parallel jobs for job array mode (each processes samples_per_job samples)",
+    )
     p_trajectory.set_defaults(func=cmd_collect_trajectory)
 
     p_plaid_collect = subparsers.add_parser(

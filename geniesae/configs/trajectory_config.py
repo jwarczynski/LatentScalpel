@@ -64,6 +64,9 @@ class TrajectoryConfig(BaseModel):
     # NOTE: Use null (all examples) for reliable results. Small sample sizes
     # (e.g. 50) are insufficient for drawing conclusions from heatmap plots.
     max_samples: int | None = Field(default=None, description="Max examples (None=all)")
+    # For job array parallelization: process samples [sample_start, sample_start + samples_per_job)
+    sample_start: int = Field(default=0, ge=0, description="Starting sample index for this job")
+    samples_per_job: int | None = Field(default=None, description="Number of samples for this job (None=all remaining)")
 
     # -- Diffusion ------------------------------------------------------------
     diffusion_steps: int = Field(default=2000, gt=0)
@@ -142,8 +145,22 @@ class TrajectoryConfig(BaseModel):
         # -- Load dataset -----------------------------------------------------
         print(f"[Trajectory] Loading dataset {self.dataset_name} ({self.dataset_split})...", flush=True)
         ds = load_dataset(self.dataset_name, split=self.dataset_split)
-        if self.max_samples is not None and self.max_samples < len(ds):
+        total_dataset_size = len(ds)
+        
+        # Apply max_samples first (global limit)
+        if self.max_samples is not None and self.max_samples < total_dataset_size:
             ds = ds.select(range(self.max_samples))
+            total_dataset_size = len(ds)
+        
+        # Then apply sample_start and samples_per_job for job array parallelization
+        end_idx = total_dataset_size
+        if self.samples_per_job is not None:
+            end_idx = min(self.sample_start + self.samples_per_job, total_dataset_size)
+        
+        if self.sample_start > 0 or end_idx < total_dataset_size:
+            ds = ds.select(range(self.sample_start, end_idx))
+            print(f"[Trajectory] Processing samples {self.sample_start} to {end_idx - 1} "
+                  f"({len(ds)} samples, job array mode)", flush=True)
 
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
@@ -360,6 +377,8 @@ class TrajectoryConfig(BaseModel):
                 "sampled_timesteps": sorted(sampled_timesteps),
                 "top_k_to_record": self.top_k_to_record,
                 "num_samples": num_samples,
+                "sample_start": self.sample_start,
+                "sample_end": self.sample_start + num_samples - 1,
                 "dataset_name": self.dataset_name,
                 "dataset_split": self.dataset_split,
             }
@@ -371,7 +390,7 @@ class TrajectoryConfig(BaseModel):
                         for t, feats in sorted(results[li].items())
                     },
                 }
-                layer_file = out_path / f"layer_{li:02d}_trajectory.json"
+                layer_file = out_path / f"layer_{li:02d}_samples_{self.sample_start}-{self.sample_start + num_samples - 1}.json"
                 with open(layer_file, "w") as f:
                     json.dump(layer_output, f, indent=2)
                 print(f"[Trajectory] Saved layer {li} to {layer_file}", flush=True)
