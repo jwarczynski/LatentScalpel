@@ -82,6 +82,10 @@ class TrajectoryConfig(BaseModel):
     device: str = "cuda:0"
     random_seed: int = 42
     output_path: str = "./experiments/trajectory_features.json"
+    checkpoint_interval: int = Field(
+        default=100, gt=0,
+        description="Save checkpoint every N batches for resume capability.",
+    )
 
     # -- Exca -----------------------------------------------------------------
     infra: exca.TaskInfra = exca.TaskInfra(version="1")
@@ -184,16 +188,52 @@ class TrajectoryConfig(BaseModel):
             li: {} for li in self.layers
         }
 
+        # -- Checkpoint handling ----------------------------------------------
+        out_path = Path(self.output_path)
+        if not out_path.suffix or out_path.suffix != ".json":
+            checkpoint_dir = out_path
+        else:
+            checkpoint_dir = out_path.parent
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_file = checkpoint_dir / "_checkpoint.json"
+        
+        start_batch = 0
+        num_batches_processed = 0
+        
+        # Try to resume from checkpoint
+        if checkpoint_file.exists():
+            print(f"[Trajectory] Found checkpoint at {checkpoint_file}, attempting resume...", flush=True)
+            try:
+                with open(checkpoint_file, "r") as f:
+                    ckpt_data = json.load(f)
+                start_batch = ckpt_data.get("next_batch_start", 0)
+                num_batches_processed = ckpt_data.get("num_batches_processed", 0)
+                # Restore results
+                for li_str, timesteps_data in ckpt_data.get("results", {}).items():
+                    li = int(li_str)
+                    if li in results:
+                        for t_str, feats in timesteps_data.items():
+                            results[li][int(t_str)] = {int(k): v for k, v in feats.items()}
+                print(f"[Trajectory] Resuming from batch {start_batch // self.batch_size + 1} "
+                      f"({num_batches_processed} batches already processed)", flush=True)
+            except Exception as e:
+                print(f"[Trajectory] Failed to load checkpoint: {e}, starting fresh", flush=True)
+                start_batch = 0
+                num_batches_processed = 0
+                results = {li: {} for li in self.layers}
+
         # -- Process in batches -----------------------------------------------
         num_samples = len(texts)
-        for batch_start in range(0, num_samples, self.batch_size):
+        total_batches = (num_samples + self.batch_size - 1) // self.batch_size
+        
+        for batch_start in range(start_batch, num_samples, self.batch_size):
             batch_end = min(batch_start + self.batch_size, num_samples)
             b_input_ids = input_ids_all[batch_start:batch_end].to(device)
             b_attention_mask = attention_mask_all[batch_start:batch_end].to(device)
             bs = b_input_ids.shape[0]
 
             print(f"[Trajectory] Batch {batch_start // self.batch_size + 1}"
-                  f"/{(num_samples + self.batch_size - 1) // self.batch_size}"
+                  f"/{total_batches}"
                   f" (samples {batch_start}-{batch_end - 1})", flush=True)
 
             with torch.no_grad():
@@ -274,16 +314,37 @@ class TrajectoryConfig(BaseModel):
                     del saved_outputs, model_output
                     torch.cuda.empty_cache()
 
+            num_batches_processed += 1
             print(f"  Batch done.", flush=True)
+            
+            # Save checkpoint periodically
+            if num_batches_processed % self.checkpoint_interval == 0:
+                print(f"[Trajectory] Saving checkpoint after {num_batches_processed} batches...", flush=True)
+                ckpt_data = {
+                    "next_batch_start": batch_start + self.batch_size,
+                    "num_batches_processed": num_batches_processed,
+                    "results": {
+                        str(li): {str(t): feats for t, feats in results[li].items()}
+                        for li in results
+                    },
+                }
+                with open(checkpoint_file, "w") as f:
+                    json.dump(ckpt_data, f)
+                print(f"[Trajectory] Checkpoint saved.", flush=True)
 
         # Average across batches
-        num_batches = (num_samples + self.batch_size - 1) // self.batch_size
+        print(f"[Trajectory] All batches complete. Averaging across {num_batches_processed} batches...", flush=True)
         for li in results:
             for t_val in results[li]:
                 for fid in results[li][t_val]:
-                    results[li][t_val][fid] /= num_batches
+                    results[li][t_val][fid] /= num_batches_processed
 
         # -- Save results -----------------------------------------------------
+        # Remove checkpoint file since we completed successfully
+        if checkpoint_file.exists():
+            checkpoint_file.unlink()
+            print(f"[Trajectory] Removed checkpoint file (completed successfully)", flush=True)
+        
         out_path = Path(self.output_path)
 
         # If output_path looks like a directory (no .json suffix) or ends with /,

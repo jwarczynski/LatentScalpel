@@ -48,6 +48,7 @@ top_k_to_record: 64
 device: "cuda:0"
 random_seed: 42
 output_path: "./experiments/results/genie/trajectory"
+checkpoint_interval: 100  # save checkpoint every 100 batches for resume
 
 # -- Exca infra ---------------------------------------------------------------
 infra:
