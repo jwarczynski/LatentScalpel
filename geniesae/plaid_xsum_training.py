@@ -83,6 +83,7 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         log_interval: int = 50,
         noise_schedule_log_interval: int = 500,
         tokenizer_path: str | None = None,
+        sample_log_every_n_epochs: int = 1,
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
@@ -111,6 +112,7 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         self.log_interval = log_interval
         self.noise_schedule_log_interval = noise_schedule_log_interval
         self.tokenizer_path = tokenizer_path
+        self.sample_log_every_n_epochs = sample_log_every_n_epochs
         self._tokenizer = None  # lazy-loaded
 
         # Build PLAID modules
@@ -442,8 +444,8 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         # Log noise schedule curve
         self._log_noise_schedule()
 
-        # Generate and log text samples (only on rank 0 in DDP)
-        if self.global_rank == 0:
+        # Generate and log text samples (only on rank 0, every N epochs)
+        if self.global_rank == 0 and (self.current_epoch + 1) % self.sample_log_every_n_epochs == 0:
             try:
                 self._generate_and_log_samples()
             except Exception as e:
@@ -488,7 +490,7 @@ class PlaidXSumTrainingModule(pl.LightningModule):
             model=self.diffusion_model,
             noise_schedule=self.noise_schedule,
             gamma_bounds=self.gamma_bounds,
-            embedding_matrix_module=self.embedding_matrix,
+            embedding_matrix=self.embedding_matrix,
             sampling_timesteps=self.sampling_timesteps,
             score_temp=self.score_temp,
             prefix_mode=prefix_mode,

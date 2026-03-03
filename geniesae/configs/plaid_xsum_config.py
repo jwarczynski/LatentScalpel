@@ -98,6 +98,16 @@ class PlaidXSumConfig(BaseModel):
     log_interval: int = Field(default=50, gt=0)
     noise_schedule_log_interval: int = Field(default=500, gt=0)
 
+    # -- Overfit / debug ------------------------------------------------------
+    overfit_batches: int | float = Field(
+        default=0,
+        description="Lightning overfit_batches: int=N batches, float=fraction. 0=disabled.",
+    )
+    sample_log_every_n_epochs: int = Field(
+        default=1, gt=0,
+        description="Generate and log text samples every N epochs.",
+    )
+
     # -- Checkpointing --------------------------------------------------------
     output_dir: str = "./experiments/plaid_xsum"
     resume_from: str | None = None
@@ -164,6 +174,7 @@ class PlaidXSumConfig(BaseModel):
             log_interval=self.log_interval,
             noise_schedule_log_interval=self.noise_schedule_log_interval,
             tokenizer_path=self.tokenizer_path,
+            sample_log_every_n_epochs=self.sample_log_every_n_epochs,
         )
         training_module.load_pretrained_weights(self.weights_path)
 
@@ -249,6 +260,7 @@ class PlaidXSumConfig(BaseModel):
             logger=wandb_logger,
             default_root_dir=str(output_dir),
             gradient_clip_val=1.0,
+            overfit_batches=self.overfit_batches,
         )
 
         # --- Train ---
