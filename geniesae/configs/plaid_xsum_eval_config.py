@@ -38,6 +38,10 @@ class PlaidXSumEvalConfig(BaseModel):
     seq_len: int = Field(default=1024, gt=0)
     max_summary_len: int = Field(default=64, gt=0)
     tokenizer_path: str = "models/plaid/plaid1b_weights/tokenizer.json"
+    eval_split: str = Field(
+        default="validate",
+        description='"validate" or "train" — which split to generate from.',
+    )
 
     # -- Sampling -------------------------------------------------------------
     prefix_mode: str = Field(
@@ -100,7 +104,7 @@ class PlaidXSumEvalConfig(BaseModel):
             prefix_mode=self.prefix_mode,
         )
 
-        # Load validation data
+        # Load data
         dm = XSumDataModule(
             data_dir=self.data_dir,
             seq_len=self.seq_len,
@@ -109,12 +113,15 @@ class PlaidXSumEvalConfig(BaseModel):
             num_workers=0,
             tokenizer_path=self.tokenizer_path,
         )
-        dm.setup("validate")
-        val_dataset = dm.val_dataset
-        assert val_dataset is not None
+        dm.setup("fit")
+        if self.eval_split == "train":
+            dataset = dm.train_dataset
+        else:
+            dataset = dm.val_dataset
+        assert dataset is not None
         sep_id = dm.sep_token_id
 
-        n = min(self.num_samples, len(val_dataset))
+        n = min(self.num_samples, len(dataset))
         logger.info(
             "Generating %d summaries (prefix_mode=%s, steps=%d, temp=%.2f)",
             n, self.prefix_mode, self.sampling_timesteps, self.score_temp,
@@ -130,7 +137,7 @@ class PlaidXSumEvalConfig(BaseModel):
         generations: list[dict[str, str]] = []
 
         for i in range(n):
-            sample = val_dataset[i]
+            sample = dataset[i]
             token_ids = sample["token_ids"].unsqueeze(0).to(device)
             boundary_idx = sample["boundary_idx"].unsqueeze(0).to(device)
             attention_mask = sample["attention_mask"].unsqueeze(0).to(device)
