@@ -331,6 +331,20 @@ def cmd_eval_plaid_xsum(args: argparse.Namespace) -> None:
         print(f"Evaluation complete. Output: {results.get('output_file', 'N/A')}")
 
 
+def cmd_token_guidance(args: argparse.Namespace) -> None:
+    from geniesae.configs import PlaidTokenGuidanceConfig
+
+    data = _load_config_dict(args.config, args.overrides)
+    config = PlaidTokenGuidanceConfig(**data)
+
+    if args.submit:
+        config.infra.job()
+        print(f"Job submitted. Status: {config.infra.status()}")
+    else:
+        results = config.apply()
+        print(f"Token guidance complete. Output: {results.get('output_file', 'N/A')}")
+
+
 
 
 
@@ -478,6 +492,13 @@ def main() -> None:
     )
     _add_common_args(p_eval_plaid_xsum)
     p_eval_plaid_xsum.set_defaults(func=cmd_eval_plaid_xsum)
+
+    p_token_guidance = subparsers.add_parser(
+        "token-guidance",
+        help="Zero-shot conditional generation on XSum via PLAID token guidance",
+    )
+    _add_common_args(p_token_guidance)
+    p_token_guidance.set_defaults(func=cmd_token_guidance)
 
     args, overrides = parser.parse_known_args()
     args.overrides = overrides if overrides else None

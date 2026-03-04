@@ -15,6 +15,7 @@ from geniesae.configs.intervention_config import InterventionConfig
 from geniesae.configs.schedule_experiment_config import ScheduleExperimentConfig
 from geniesae.configs.plaid_xsum_config import PlaidXSumConfig
 from geniesae.configs.plaid_xsum_eval_config import PlaidXSumEvalConfig
+from geniesae.configs.plaid_token_guidance_config import PlaidTokenGuidanceConfig
 
 __all__ = [
     "ActivationCollectionConfig",
@@ -32,4 +33,5 @@ __all__ = [
     "ScheduleExperimentConfig",
     "PlaidXSumConfig",
     "PlaidXSumEvalConfig",
+    "PlaidTokenGuidanceConfig",
 ]

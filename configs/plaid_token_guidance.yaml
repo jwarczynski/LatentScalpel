@@ -1,0 +1,38 @@
+# Zero-shot conditional summarization on XSum via PLAID token guidance.
+# Uses pretrained PLAID 1B weights (no fine-tuning) with the token guidance
+# technique from Section 6.3 of the paper.
+#
+# Submit:
+#   uv run python main.py token-guidance configs/plaid_token_guidance.yaml --submit
+
+weights_path: "models/plaid/plaid1b_weights"
+dim: 2048
+embed_dim: 16
+n_blocks: 24
+n_heads: 32
+vocab_size: 32768
+gamma_0: -3.0
+gamma_1: 6.0
+
+data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
+tokenizer_path: "models/plaid/plaid1b_weights/tokenizer.json"
+eval_split: "dev"
+
+seq_len: 1024
+max_article_tokens: 900
+sampling_timesteps: 1024
+score_temp: 0.9
+guidance_weight: 2.0
+num_samples: 50
+
+output_dir: "./experiments/plaid_xsum/token_guidance_results"
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_token_guidance"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 40
+  timeout_min: 720
+  slurm_partition: plgrid-gpu-a100
