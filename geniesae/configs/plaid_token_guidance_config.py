@@ -208,9 +208,11 @@ class PlaidTokenGuidanceConfig(BaseModel):
         metrics = evaluator.evaluate(predictions, references)
         print(f"Metrics: {metrics}", flush=True)
 
-        # Save results
+        # Save results — include hyperparams in filename for easy comparison
         out_dir = Path(self.output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
+
+        tag = f"gw{self.guidance_weight}_steps{self.sampling_timesteps}_temp{self.score_temp}_n{n}"
 
         results = {
             "weights_path": self.weights_path,
@@ -223,11 +225,11 @@ class PlaidTokenGuidanceConfig(BaseModel):
             "metrics": metrics,
             "generations": generations,
         }
-        out_path = out_dir / "token_guidance_results.json"
+        out_path = out_dir / f"results_{tag}.json"
         with open(out_path, "w") as f:
             json.dump(results, f, indent=2)
         print(f"Results saved to {out_path}", flush=True)
 
-        evaluator.save_results(metrics, filename="token_guidance_metrics.json")
+        evaluator.save_results(metrics, filename=f"metrics_{tag}.json")
 
         return {"metrics": metrics, "output_file": str(out_path)}
