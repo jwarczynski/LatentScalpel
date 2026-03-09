@@ -1,0 +1,24 @@
+# Quick eval of conditional PLAID on XSum validation (small subset).
+checkpoint: "./experiments/plaid_xsum_conditional/checkpoints/conditional-8gpu-bs4/best-epoch10.ckpt"
+
+data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
+seq_len: 1024
+max_summary_len: 64
+tokenizer_path: "models/plaid/plaid1b_weights/tokenizer.json"
+
+prefix_mode: "clean"
+sampling_timesteps: 256
+score_temp: 0.9
+num_samples: 50
+
+output_dir: "./experiments/plaid_xsum_conditional/eval_results"
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_xsum_conditional_eval"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 40
+  timeout_min: 60
+  slurm_partition: plgrid-gpu-a100

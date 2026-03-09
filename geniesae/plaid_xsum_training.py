@@ -564,7 +564,7 @@ class PlaidXSumTrainingModule(pl.LightningModule):
                     ],
                 )
                 self.logger.experiment.log(
-                    {"val/generated_samples": table},
+                    {f"val/generated_samples_epoch_{epoch}": table},
                     step=self.global_step,
                 )
             except Exception as e:

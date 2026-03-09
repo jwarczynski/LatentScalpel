@@ -41,7 +41,7 @@ guidance_scale: 1.0
 sampler: "inpainting"
 num_eval_samples: 2
 
-use_˚: true
+use_wandb: true
 wandb_project: "plaid-xsum"
 wandb_run_name: "conditional-test-1gpu"
 log_interval: 10
