@@ -59,6 +59,10 @@ class PlaidTokenGuidanceConfig(BaseModel):
     guidance_weight: float = Field(
         default=2.0, description="Token guidance weight (paper default: 2.0).",
     )
+    prompt_suffix: str = Field(
+        default="\n\nTL;DR:",
+        description="Text appended after article to steer generation toward summarization.",
+    )
     num_samples: int = Field(default=50, gt=0)
 
     # -- Output ---------------------------------------------------------------
@@ -133,7 +137,8 @@ class PlaidTokenGuidanceConfig(BaseModel):
         n = min(self.num_samples, len(src_lines))
         print(
             f"Generating {n} summaries (steps={self.sampling_timesteps}, "
-            f"temp={self.score_temp}, guidance_weight={self.guidance_weight})",
+            f"temp={self.score_temp}, guidance_weight={self.guidance_weight}, "
+            f"prompt_suffix={self.prompt_suffix!r})",
             flush=True,
         )
 
@@ -145,10 +150,8 @@ class PlaidTokenGuidanceConfig(BaseModel):
             article_text = src_lines[i]
             ref_text = tgt_lines[i]
 
-            # Build prompt: article text followed by \n\nTL;DR:
-            # The model was trained on OpenWebText2 which contains natural
-            # web text. TL;DR is a common summarization prompt in web text.
-            prompt = article_text + "\n\nTL;DR:"
+            # Build prompt: article text followed by prompt_suffix
+            prompt = article_text + self.prompt_suffix
             prompt_ids = tokenizer.encode(prompt).ids
 
             # Truncate if needed (leave room for generation)
@@ -220,6 +223,7 @@ class PlaidTokenGuidanceConfig(BaseModel):
             "guidance_weight": self.guidance_weight,
             "sampling_timesteps": self.sampling_timesteps,
             "score_temp": self.score_temp,
+            "prompt_suffix": self.prompt_suffix,
             "num_samples": n,
             "seq_len": self.seq_len,
             "max_article_tokens": self.max_article_tokens,

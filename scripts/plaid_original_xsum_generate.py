@@ -548,6 +548,7 @@ def conditional_generate_xsum(
     score_temp: float = 0.9,
     seq_len: int = 1024,
     embed_dim: int = 16,
+    prompt_suffix: str = "\n\nTL;DR:",
 ):
     """Generate conditional summaries for XSum articles.
 
@@ -566,10 +567,8 @@ def conditional_generate_xsum(
         print(f"\n{'='*60}")
         print(f"Article {idx+1}/{len(articles)}")
 
-        # Build prompt: article + \n\nTL;DR:
-        # The model was trained on OpenWebText2 which contains natural
-        # web text. TL;DR is a common summarization prompt in web text.
-        prompt = article + "\n\nTL;DR:"
+        # Build prompt: article + prompt_suffix
+        prompt = article + prompt_suffix
         prompt_ids = tokenizer.encode(prompt).ids
 
         # Truncate if needed (leave room for generation)
@@ -683,6 +682,8 @@ def main():
                         help="Number of diffusion sampling steps")
     parser.add_argument("--guidance_weight", type=float, default=2.0,
                         help="Classifier-free guidance weight for prefix")
+    parser.add_argument("--prompt_suffix", type=str, default="\n\nTL;DR:",
+                        help="Text appended after article to steer summarization")
     parser.add_argument("--score_temp", type=float, default=0.9,
                         help="Score temperature for sampling")
     parser.add_argument("--seq_len", type=int, default=1024,
@@ -745,6 +746,7 @@ def main():
         score_temp=args.score_temp,
         seq_len=args.seq_len,
         embed_dim=args.embed_dim,
+        prompt_suffix=args.prompt_suffix,
     )
 
 

@@ -25,10 +25,11 @@ python scripts/plaid_original_xsum_generate.py \
     --tokenizer_path "$SCRATCH/plaid/misc/owt2_tokenizer.json" \
     --xsum_src_path "$SCRATCH/GenieSAE/datasets/glge-released-dataset/easy/xsum_data/org_data/dev.src" \
     --xsum_tgt_path "$SCRATCH/GenieSAE/datasets/glge-released-dataset/easy/xsum_data/org_data/dev.tgt" \
-    --output_path "experiments/plaid_original_xsum/dev_results.jsonl" \
-    --num_samples 50 \
+    --output_path "experiments/plaid_original_xsum/dev_results_summarize_prompt.jsonl" \
+    --num_samples 10 \
     --n_samples_per_article 1 \
     --max_article_tokens 900 \
     --sampling_timesteps 1024 \
     --guidance_weight 2.0 \
-    --score_temp 0.9
+    --score_temp 0.9 \
+    --prompt_suffix $'\n\nThe article can be summarized as follows:'
