@@ -186,21 +186,22 @@ class PlaidTokenGuidanceConfig(BaseModel):
             references.append(ref_text)
             generations.append({
                 "idx": i,
-                "article": article_text[:500],
+                "article": article_text,
                 "reference": ref_text,
                 "generated": gen_text,
                 "prefix_len": prefix_len,
                 "gen_time_s": round(gen_time, 1),
             })
 
+            print(f"\n{'='*80}", flush=True)
             print(
                 f"[{i + 1}/{n}] ({gen_time:.1f}s) prefix={prefix_len} toks | "
                 f"gen={len(gen_clean)} toks",
                 flush=True,
             )
-            if (i + 1) <= 3 or (i + 1) % 10 == 0:
-                print(f"  REF: {ref_text[:200]}", flush=True)
-                print(f"  GEN: {gen_text[:200]}", flush=True)
+            print(f"  ARTICLE: {article_text}", flush=True)
+            print(f"  REFERENCE: {ref_text}", flush=True)
+            print(f"  GENERATED: {gen_text}", flush=True)
 
         # Compute metrics
         print("Computing metrics...", flush=True)
