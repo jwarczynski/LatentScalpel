@@ -541,8 +541,7 @@ def conditional_generate_xsum(
     articles: list[str],
     references: list[str] | None,
     output_path: str,
-    max_article_tokens: int = 200,
-    max_summary_tokens: int = 80,
+    max_article_tokens: int = 900,
     n_samples_per_article: int = 1,
     sampling_timesteps: int = 256,
     guidance_weight: float = 2.0,
@@ -552,10 +551,13 @@ def conditional_generate_xsum(
 ):
     """Generate conditional summaries for XSum articles.
 
-    Strategy: Use prefix guidance from the original sample.py.
-    We tokenize the article prefix and guide the model to produce text
-    that starts with those tokens. The generated continuation after the
-    article prefix is treated as the summary.
+    Strategy: Build a prompt "article_text\\n\\nTL;DR:" and guide all prompt
+    tokens at their positions. The model was trained on OpenWebText2 which
+    contains natural web text with TL;DR patterns, so this steers it toward
+    summarization. The generated text after the prompt is the summary,
+    truncated at EOT (token 0) or double newline.
+
+    This matches the approach in geniesae/configs/plaid_token_guidance_config.py.
     """
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
     results = []
@@ -564,29 +566,33 @@ def conditional_generate_xsum(
         print(f"\n{'='*60}")
         print(f"Article {idx+1}/{len(articles)}")
 
-        # Tokenize article prefix (truncate to budget)
-        article_ids = tokenizer.encode(article).ids
-        if len(article_ids) > max_article_tokens:
-            article_ids = article_ids[:max_article_tokens]
+        # Build prompt: article + \n\nTL;DR:
+        # The model was trained on OpenWebText2 which contains natural
+        # web text. TL;DR is a common summarization prompt in web text.
+        prompt = article + "\n\nTL;DR:"
+        prompt_ids = tokenizer.encode(prompt).ids
 
-        prefix_len = len(article_ids)
-        total_len = min(prefix_len + max_summary_tokens, seq_len)
+        # Truncate if needed (leave room for generation)
+        if len(prompt_ids) > max_article_tokens:
+            prompt_ids = prompt_ids[:max_article_tokens]
 
-        # Build guidance tokens: guide each prefix position
+        prefix_len = len(prompt_ids)
+
+        # Build guidance tokens: guide each prompt position
         guidance_tokens = [
             (token_id, guidance_weight, pos, False)
-            for pos, token_id in enumerate(article_ids)
+            for pos, token_id in enumerate(prompt_ids)
         ]
 
-        print(f"  Prefix tokens: {prefix_len}, generating up to pos {total_len}")
+        print(f"  Prompt tokens: {prefix_len}, seq_len: {seq_len}")
         t_start = time.time()
 
-        # Generate
+        # Generate full seq_len sequence with guidance
         x_samples = generate_samples(
             modules=modules,
             guidance_tokens=guidance_tokens,
             n_samples=n_samples_per_article,
-            seq_len=total_len,
+            seq_len=seq_len,
             sampling_timesteps=sampling_timesteps,
             score_temp=score_temp,
             embed_dim=embed_dim,
@@ -599,25 +605,36 @@ def conditional_generate_xsum(
         for sample_idx in range(n_samples_per_article):
             all_ids = x_samples[sample_idx].tolist()
 
-            # The generated text after the prefix is our "summary"
-            generated_suffix_ids = all_ids[prefix_len:]
-            # Also decode the full generation to see what the model produced
-            full_text = tokenizer.decode(all_ids)
-            prefix_text = tokenizer.decode(all_ids[:prefix_len])
-            suffix_text = tokenizer.decode(generated_suffix_ids)
+            # The generated text after the prompt is our "summary"
+            gen_suffix_ids = all_ids[prefix_len:]
 
+            # Truncate at EOT (token 0 in PLAID tokenizer)
+            gen_clean: list[int] = []
+            for tid in gen_suffix_ids:
+                if tid == 0:
+                    break
+                gen_clean.append(tid)
+
+            # Decode and take first paragraph only
+            gen_text = tokenizer.decode(gen_clean) if gen_clean else ""
+            if "\n\n" in gen_text:
+                gen_text = gen_text[:gen_text.index("\n\n")]
+            gen_text = gen_text.strip()
+
+            full_text = tokenizer.decode(all_ids)
+            prompt_text = tokenizer.decode(all_ids[:prefix_len])
             ref = references[idx] if references else None
 
             result = {
                 "idx": idx,
                 "sample_idx": sample_idx,
-                "article_prefix": article[:500],
+                "article": article[:500],
                 "reference_summary": ref,
+                "generated_summary": gen_text,
                 "generated_full": full_text,
-                "generated_prefix": prefix_text,
-                "generated_suffix": suffix_text,
+                "prompt_text": prompt_text[:300],
                 "prefix_tokens": prefix_len,
-                "total_tokens": total_len,
+                "gen_tokens": len(gen_clean),
                 "sampling_timesteps": sampling_timesteps,
                 "guidance_weight": guidance_weight,
                 "score_temp": score_temp,
@@ -625,8 +642,8 @@ def conditional_generate_xsum(
             results.append(result)
 
             print(f"  --- Sample {sample_idx} ---")
-            print(f"  PREFIX: {prefix_text[:200]}...")
-            print(f"  GENERATED SUFFIX: {suffix_text[:300]}")
+            print(f"  PROMPT (last 100 chars): ...{prompt_text[-100:]}")
+            print(f"  GENERATED SUMMARY: {gen_text[:300]}")
             if ref:
                 print(f"  REFERENCE: {ref[:200]}")
 
@@ -660,11 +677,9 @@ def main():
                         help="Number of articles to process")
     parser.add_argument("--n_samples_per_article", type=int, default=1,
                         help="Number of samples per article")
-    parser.add_argument("--max_article_tokens", type=int, default=200,
-                        help="Max tokens from article to use as prefix")
-    parser.add_argument("--max_summary_tokens", type=int, default=80,
-                        help="Max tokens to generate after prefix")
-    parser.add_argument("--sampling_timesteps", type=int, default=256,
+    parser.add_argument("--max_article_tokens", type=int, default=900,
+                        help="Max tokens for article+TL;DR prompt (leaves room for summary)")
+    parser.add_argument("--sampling_timesteps", type=int, default=1024,
                         help="Number of diffusion sampling steps")
     parser.add_argument("--guidance_weight", type=float, default=2.0,
                         help="Classifier-free guidance weight for prefix")
@@ -724,7 +739,6 @@ def main():
         references=references,
         output_path=args.output_path,
         max_article_tokens=args.max_article_tokens,
-        max_summary_tokens=args.max_summary_tokens,
         n_samples_per_article=args.n_samples_per_article,
         sampling_timesteps=args.sampling_timesteps,
         guidance_weight=args.guidance_weight,

@@ -4,7 +4,7 @@
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
-#SBATCH --time=02:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=logs/plaid_orig_xsum_%j.out
 #SBATCH --error=logs/plaid_orig_xsum_%j.err
 
@@ -28,8 +28,7 @@ python scripts/plaid_original_xsum_generate.py \
     --output_path "experiments/plaid_original_xsum/dev_results.jsonl" \
     --num_samples 50 \
     --n_samples_per_article 1 \
-    --max_article_tokens 200 \
-    --max_summary_tokens 80 \
-    --sampling_timesteps 256 \
+    --max_article_tokens 900 \
+    --sampling_timesteps 1024 \
     --guidance_weight 2.0 \
     --score_temp 0.9
