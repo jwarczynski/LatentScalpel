@@ -136,11 +136,13 @@ class InpaintingSampler:
             else:
                 z = x_reconst
 
-        # Decode: argmax over logits
+        # Decode: argmax over logits — use gamma_t from last step (gamma at t≈0),
+        # NOT literal zero. gamma(0) = gamma_0 ≈ -3, which affects z_variance
+        # normalization and bias scaling in the model forward pass.
         z_final = z.float()
         logits, _ = self.model(
             z=z_final,
-            gamma=torch.zeros(B, device=device),
+            gamma=gamma_t.float(),
             embedding_matrix=embedding_matrix,
             bias_scale=1.0,
             x_selfcond=x_selfcond,
@@ -289,12 +291,13 @@ class TokenGuidanceSampler:
             else:
                 z = x_reconst.detach()
 
-        # Final decode
+        # Final decode — use gamma_t from last iteration (gamma at t≈0),
+        # NOT literal zero. gamma(0) = gamma_0 ≈ -3.
         z_final = z.float()
         with torch.no_grad():
             logits, _ = self.model(
                 z=z_final,
-                gamma=torch.zeros(B, device=device),
+                gamma=gamma_t.float(),
                 embedding_matrix=embedding_matrix,
                 bias_scale=1.0,
                 x_selfcond=x_selfcond,
@@ -426,12 +429,12 @@ class GradientGuidanceSampler:
             else:
                 z = x_reconst.detach()
 
-        # Decode: argmax over logits
+        # Decode: argmax over logits — use gamma_t from last step, not literal zero
         z_final = z.float()
         with torch.no_grad():
             logits, _ = self.model(
                 z=z_final,
-                gamma=torch.zeros(B, device=device),
+                gamma=gamma_t.float(),
                 embedding_matrix=embedding_matrix,
                 bias_scale=1.0,
                 x_selfcond=x_selfcond.float(),
