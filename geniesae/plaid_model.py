@@ -34,7 +34,12 @@ from einops import rearrange
 # ---------------------------------------------------------------------------
 
 class Rotary(nn.Module):
-    """Rotary positional embeddings (RoPE)."""
+    """Rotary positional embeddings (RoPE).
+
+    Produces cos/sin tensors of shape (1, seq_len, 3, 1, dim) matching
+    the original plaid code. The third axis corresponds to q, k, v —
+    index 2 (v) is set to cos=1, sin=0 so that v is NOT rotated.
+    """
 
     def __init__(self, dim: int, base: float = 10000.0) -> None:
         super().__init__()
@@ -51,8 +56,12 @@ class Rotary(nn.Module):
             t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
             freqs = torch.einsum("i,j->ij", t, self.inv_freq)
             emb = torch.cat((freqs, freqs), dim=-1)
-            self._cos_cached = emb.cos()[None, :, None, :]
-            self._sin_cached = emb.sin()[None, :, None, :]
+            # Shape: (1, seq_len, 3, 1, dim) — 3 for q, k, v
+            self._cos_cached = emb.cos()[None, :, None, None, :].repeat(1, 1, 3, 1, 1)
+            self._sin_cached = emb.sin()[None, :, None, None, :].repeat(1, 1, 3, 1, 1)
+            # Make v rotation an identity (cos=1, sin=0)
+            self._cos_cached[:, :, 2, :, :].fill_(1.)
+            self._sin_cached[:, :, 2, :, :].fill_(0.)
         return self._cos_cached, self._sin_cached
 
 
@@ -62,14 +71,14 @@ def _rotate_half(x: torch.Tensor) -> torch.Tensor:
 
 
 def apply_rotary_pos_emb(qkv: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
-    """Apply rotary embeddings to q and k in a (b, s, 3, h, d) tensor."""
+    """Apply rotary embeddings to qkv tensor of shape (b, s, 3, h, d).
+
+    cos/sin have shape (1, s, 3, 1, d) where index 2 (v) has cos=1, sin=0,
+    so v passes through unchanged — matching the original plaid code.
+    """
     cos = cos[:, :qkv.shape[1]]
     sin = sin[:, :qkv.shape[1]]
-    # qkv shape: (b, s, 3, h, d) — apply to q (idx 0) and k (idx 1)
-    q, k, v = qkv[:, :, 0], qkv[:, :, 1], qkv[:, :, 2]
-    q = (q * cos) + (_rotate_half(q) * sin)
-    k = (k * cos) + (_rotate_half(k) * sin)
-    return torch.stack([q, k, v], dim=2)
+    return (qkv * cos) + (_rotate_half(qkv) * sin)
 
 
 # ---------------------------------------------------------------------------
@@ -424,10 +433,15 @@ def _apply_mup_shapes(model: DiffusionModel, dim: int, base_dim: int = 256) -> N
     """Apply muP scaling factors to the output readout layer.
 
     In the original code, mup.set_base_shapes() computes these from
-    base/delta models. For inference we just need the ratio.
+    base/delta models. MuReadout.__init__ sets output_mult=1.0 (default),
+    and width_mult is computed as dim/base_dim by set_base_shapes.
+    The forward scaling is: x * output_mult / width_mult.
+
+    Previously this had output_mult = base_dim/dim = 0.125, giving a
+    total scaling of 0.125/8 = 0.015625 — 8x too small, crushing logits.
     """
-    width_mult = dim / base_dim
-    output_mult = base_dim / dim  # muP readout scaling
+    width_mult = dim / base_dim   # 2048/256 = 8.0
+    output_mult = 1.0             # MuReadout default
 
     model.output_linear._output_mult.fill_(output_mult)
     model.output_linear._width_mult.fill_(width_mult)
