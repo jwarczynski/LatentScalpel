@@ -1,0 +1,11 @@
+# Config for submitting plaid_original_xsum_generate.py to Slurm
+# This is a standalone script (not exca), submitted via sbatch wrapper.
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_original_xsum_generate"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 64
+  timeout_min: 120
+  slurm_partition: plgrid-gpu-a100
