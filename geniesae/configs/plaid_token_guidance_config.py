@@ -63,6 +63,7 @@ class PlaidTokenGuidanceConfig(BaseModel):
         default="\n\nTL;DR:",
         description="Text appended after article to steer generation toward summarization.",
     )
+    seed: int = Field(default=42, description="Random seed for reproducibility.")
     num_samples: int = Field(default=50, gt=0)
 
     # -- Output ---------------------------------------------------------------
@@ -112,6 +113,11 @@ class PlaidTokenGuidanceConfig(BaseModel):
         )
         print(f"Weights loaded in {time.time() - t0:.1f}s", flush=True)
 
+        # Set seed for reproducibility
+        torch.manual_seed(self.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(self.seed)
+
         # Build sampler
         sampler = TokenGuidanceSampler(
             model=modules["model"],
@@ -135,6 +141,12 @@ class PlaidTokenGuidanceConfig(BaseModel):
         )
 
         n = min(self.num_samples, len(src_lines))
+
+        # Re-seed right before generation loop for reproducibility
+        torch.manual_seed(self.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(self.seed)
+
         print(
             f"Generating {n} summaries (steps={self.sampling_timesteps}, "
             f"temp={self.score_temp}, guidance_weight={self.guidance_weight}, "

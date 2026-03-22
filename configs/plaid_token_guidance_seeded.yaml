@@ -1,0 +1,24 @@
+# Seeded comparison: our reimplementation with seed=42 and TL;DR prompt
+weights_path: "models/plaid/plaid1b_weights"
+data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
+tokenizer_path: "models/plaid/plaid1b_weights/tokenizer.json"
+eval_split: "dev"
+seq_len: 1024
+max_article_tokens: 900
+sampling_timesteps: 1024
+score_temp: 0.9
+guidance_weight: 2.0
+prompt_suffix: "\n\nTL;DR:"
+seed: 42
+num_samples: 10
+output_dir: "./experiments/plaid_xsum/token_guidance_seeded"
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_token_guidance_seeded"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 64
+  timeout_min: 720
+  slurm_partition: plgrid-gpu-a100

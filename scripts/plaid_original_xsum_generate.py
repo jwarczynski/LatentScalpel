@@ -695,6 +695,8 @@ def main():
     parser.add_argument("--vocab_size", type=int, default=32768)
     parser.add_argument("--gamma_0", type=float, default=-3.)
     parser.add_argument("--gamma_1", type=float, default=6.)
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducibility")
     args = parser.parse_args()
 
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -704,6 +706,11 @@ def main():
 
     print("Loading tokenizer...")
     tokenizer = Tokenizer.from_file(args.tokenizer_path)
+
+    # Set seed for reproducibility
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
 
     print("Loading pretrained Plaid 1B weights...")
     modules = load_modules(
@@ -731,6 +738,11 @@ def main():
         args.xsum_src_path, args.xsum_tgt_path, args.num_samples
     )
     print(f"  Loaded {len(articles)} articles")
+
+    # Re-seed before generation loop for reproducibility
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
 
     # Generate conditional summaries
     conditional_generate_xsum(
