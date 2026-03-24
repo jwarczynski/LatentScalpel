@@ -341,20 +341,30 @@ class PlaidXSumTrainingModule(pl.LightningModule):
             diffusion_loss = torch.tensor(0.0, device=device, dtype=torch.float64)
 
         # --- Prior loss: KL(q(z_1|x) || N(0,I)) ---
-        # Following original: gaussian_kl(alpha_1 * x_embed, sigma_1, 0, 1)
-        # KL = log(1/sigma_1) + (sigma_1^2 + (alpha_1*x_embed)^2) / 2 - 0.5
-        # = -log(sigma_1) + sigma_1^2/2 + alpha_1^2 * x_embed^2 / 2 - 0.5
+        # Following original: detach alpha_1/sigma_1 for selfcond examples
+        alpha_1_masked = torch.lerp(
+            alpha_1.expand(B), alpha_1.detach().expand(B), selfcond_mask
+        )[:, None, None]
+        sigma_1_masked = torch.lerp(
+            sigma_1.expand(B), sigma_1.detach().expand(B), selfcond_mask
+        )[:, None, None]
         x_embed_d = x_embed.double()
         prior_kl = (
-            -sigma_1.log()
-            + 0.5 * sigma_1 ** 2
-            + 0.5 * alpha_1 ** 2 * x_embed_d ** 2
+            -sigma_1_masked.log()
+            + 0.5 * sigma_1_masked ** 2
+            + 0.5 * (alpha_1_masked * x_embed_d) ** 2
             - 0.5
         )  # (B, S, E)
-        # Apply loss mask and average: sum over embed_dim, mean over seq
+        # Original reduction: sum over embed_dim, then mean over (batch * seq)
+        # For conditional mode: mask out article positions
         prior_kl = prior_kl * loss_mask[:, :, None]
-        valid_counts_all = loss_mask.sum(dim=1).clamp(min=1)  # (B,)
-        prior_loss = (prior_kl.sum(dim=1) / valid_counts_all[:, None]).sum(dim=1).mean()
+        # sum over embed_dim → (B, S), then sum over seq / valid_count, then mean over batch
+        prior_kl_per_example = prior_kl.sum(dim=2)  # (B, S)
+        if self.training_mode == "conditional" and boundary_idx is not None:
+            valid_counts_all = loss_mask.sum(dim=1).clamp(min=1)  # (B,)
+            prior_loss = (prior_kl_per_example.sum(dim=1) / valid_counts_all).mean()
+        else:
+            prior_loss = prior_kl_per_example.mean()
 
         total_loss = reconst_loss + diffusion_loss + prior_loss
 

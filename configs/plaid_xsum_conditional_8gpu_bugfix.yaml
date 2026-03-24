@@ -46,7 +46,7 @@ num_eval_samples: 5
 
 use_wandb: true
 wandb_project: "plaid-xsum"
-wandb_run_name: "conditional-8gpu-bugfix-v2"
+wandb_run_name: "conditional-8gpu-bugfix-v3"
 log_interval: 50
 noise_schedule_log_interval: 500
 
@@ -54,7 +54,7 @@ output_dir: "./experiments/plaid_xsum_conditional_bugfix"
 resume_from: null
 
 infra:
-  version: "3"
+  version: "4"
   folder: "./experiments/cache/plaid_xsum_conditional_bugfix"
   cluster: slurm
   gpus_per_node: 8
