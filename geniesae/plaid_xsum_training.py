@@ -227,31 +227,10 @@ class PlaidXSumTrainingModule(pl.LightningModule):
                 gamma_t.sum(), t, create_graph=True
             )[0]  # (B,)
 
-        alpha_squared = torch.sigmoid(-gamma_t)
-        sigma_squared = torch.sigmoid(gamma_t)
-        alpha = alpha_squared.sqrt()
-        sigma = sigma_squared.sqrt()
-
-        # SNR'(t) = -exp(-gamma) * gamma'(t)
-        # Since gamma increases with t, gamma' > 0, so SNR' < 0
-        # and -0.5 * SNR' > 0 → diffusion loss is positive
-        snr_prime = -torch.exp(-gamma_t) * gamma_prime  # (B,)
-
         # gamma_1 quantities for prior loss
         gamma_0_val, gamma_1_val = self.gamma_bounds()
         alpha_1 = torch.sigmoid(-gamma_1_val).sqrt()
         sigma_1 = torch.sigmoid(gamma_1_val).sqrt()
-
-        # Forward diffusion: z_t = alpha * x_embed + sigma * noise
-        noise = torch.randn_like(x_embed.double()).float()
-        z_t = (alpha[:, None, None] * x_embed.double() + sigma[:, None, None] * noise.double()).float()
-
-        # --- Conditional mode: replace article prefix in z_t ---
-        if self.training_mode == "conditional" and boundary_idx is not None:
-            for b in range(B):
-                bi = boundary_idx[b].item()
-                if bi > 0:
-                    z_t[b, :bi] = x_embed[b, :bi].float()
 
         # Build loss mask for conditional mode
         if self.training_mode == "conditional" and boundary_idx is not None:
@@ -262,11 +241,39 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         else:
             loss_mask = attention_mask.double()
 
-        # Self-conditioning
-        x_selfcond = torch.zeros_like(z_t)
+        # --- Self-conditioning setup (BEFORE constructing z_t) ---
+        # Following original PLAID: detach gamma, gamma_prime, and x_embed
+        # for self-conditioned examples so the noise schedule and embedding
+        # matrix don't receive gradients from those examples.
         selfcond_mask = torch.zeros(B, device=device)
-
         sc_mask = torch.rand(B, device=device) < self.self_cond_prob
+        if sc_mask.any():
+            sc_float = sc_mask.float()
+            gamma_t = torch.lerp(gamma_t, gamma_t.detach(), sc_float)
+            gamma_prime = torch.lerp(gamma_prime, gamma_prime.detach(), sc_float)
+            x_embed = torch.lerp(x_embed, x_embed.detach(), sc_float[:, None, None])
+
+        # Derived quantities (after selfcond detachment)
+        alpha_squared = torch.sigmoid(-gamma_t)
+        sigma_squared = torch.sigmoid(gamma_t)
+        alpha = alpha_squared.sqrt()
+        sigma = sigma_squared.sqrt()
+        snr_prime = -torch.exp(-gamma_t) * gamma_prime  # (B,)
+
+        # Forward diffusion: z_t = alpha * x_embed + sigma * noise
+        noise = torch.randn(B, S, self.embed_dim, device=device, dtype=torch.float32)
+        z_t = (alpha[:, None, None] * x_embed.double()
+               + sigma[:, None, None] * noise.double()).float()
+
+        # --- Conditional mode: replace article prefix in z_t with clean embeddings ---
+        if self.training_mode == "conditional" and boundary_idx is not None:
+            for b in range(B):
+                bi = boundary_idx[b].item()
+                if bi > 0:
+                    z_t[b, :bi] = x_embed[b, :bi].float()
+
+        # Self-conditioning forward pass
+        x_selfcond = torch.zeros_like(z_t)
         if sc_mask.any():
             with torch.no_grad():
                 _, x_reconst_sc = self.diffusion_model(
@@ -282,7 +289,7 @@ class PlaidXSumTrainingModule(pl.LightningModule):
             )
             selfcond_mask = sc_mask.float()
 
-        # Forward pass
+        # Main forward pass
         logits, x_reconst = self.diffusion_model(
             z=z_t,
             gamma=gamma_t.float(),
