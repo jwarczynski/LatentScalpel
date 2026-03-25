@@ -63,7 +63,9 @@ class PlaidXSumConfig(BaseModel):
         default="unconditional",
         description=(
             '"unconditional": VLB loss on full sequence (PLAID paper approach). '
-            '"conditional": inpaint article during training, loss on summary only.'
+            '"conditional": inpaint article during training, loss on summary only. '
+            '"template": unconditional diffusion with ARTICLE:/SUMMARY: template, '
+            'loss on summary tokens only.'
         ),
     )
 
@@ -135,6 +137,7 @@ class PlaidXSumConfig(BaseModel):
         from geniesae.xsum_data import XSumDataModule
 
         # --- Data ---
+        format_mode = "template" if self.training_mode == "template" else "sep"
         data_module = XSumDataModule(
             data_dir=self.data_dir,
             seq_len=self.seq_len,
@@ -142,6 +145,7 @@ class PlaidXSumConfig(BaseModel):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             tokenizer_path=self.tokenizer_path,
+            format_mode=format_mode,
         )
 
         # --- Model ---

@@ -232,12 +232,14 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         alpha_1 = torch.sigmoid(-gamma_1_val).sqrt()
         sigma_1 = torch.sigmoid(gamma_1_val).sqrt()
 
-        # Build loss mask for conditional mode
-        if self.training_mode == "conditional" and boundary_idx is not None:
+        # Build loss mask
+        # - conditional/template: loss only on summary tokens (after boundary_idx)
+        # - unconditional: loss on all real tokens
+        if self.training_mode in ("conditional", "template") and boundary_idx is not None:
             loss_mask = torch.zeros(B, S, device=device, dtype=torch.float64)
             for b in range(B):
                 bi = boundary_idx[b].item()
-                loss_mask[b, bi + 1:] = attention_mask[b, bi + 1:].double()
+                loss_mask[b, bi:] = attention_mask[b, bi:].double()
         else:
             loss_mask = attention_mask.double()
 
@@ -266,6 +268,7 @@ class PlaidXSumTrainingModule(pl.LightningModule):
                + sigma[:, None, None] * noise.double()).float()
 
         # --- Conditional mode: replace article prefix in z_t with clean embeddings ---
+        # (Template mode skips this — full sequence is noised unconditionally)
         if self.training_mode == "conditional" and boundary_idx is not None:
             for b in range(B):
                 bi = boundary_idx[b].item()
