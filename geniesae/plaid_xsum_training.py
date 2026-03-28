@@ -250,7 +250,7 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         selfcond_mask = torch.zeros(B, device=device)
         sc_mask = torch.rand(B, device=device) < self.self_cond_prob
         if sc_mask.any():
-            sc_float = sc_mask.float()
+            sc_float = sc_mask.double()
             gamma_t = torch.lerp(gamma_t, gamma_t.detach(), sc_float)
             gamma_prime = torch.lerp(gamma_prime, gamma_prime.detach(), sc_float)
             x_embed = torch.lerp(x_embed, x_embed.detach(), sc_float[:, None, None])
@@ -346,10 +346,10 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         # --- Prior loss: KL(q(z_1|x) || N(0,I)) ---
         # Following original: detach alpha_1/sigma_1 for selfcond examples
         alpha_1_masked = torch.lerp(
-            alpha_1.expand(B), alpha_1.detach().expand(B), selfcond_mask
+            alpha_1.expand(B), alpha_1.detach().expand(B), selfcond_mask.double()
         )[:, None, None]
         sigma_1_masked = torch.lerp(
-            sigma_1.expand(B), sigma_1.detach().expand(B), selfcond_mask
+            sigma_1.expand(B), sigma_1.detach().expand(B), selfcond_mask.double()
         )[:, None, None]
         x_embed_d = x_embed.double()
         prior_kl = (

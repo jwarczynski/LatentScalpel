@@ -54,7 +54,7 @@ output_dir: "./experiments/plaid_xsum_conditional_bugfix"
 resume_from: null
 
 infra:
-  version: "4"
+  version: "5"
   folder: "./experiments/cache/plaid_xsum_conditional_bugfix"
   cluster: slurm
   gpus_per_node: 8
