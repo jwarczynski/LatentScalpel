@@ -72,8 +72,10 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         freeze_layers: list[int] | None = None,
         # Gradient checkpointing
         gradient_checkpointing: bool = True,
-        # Training mode: "unconditional" or "conditional"
+        # Training mode: "unconditional", "conditional", or "template"
         training_mode: str = "unconditional",
+        # LR schedule: "cosine" or "linear"
+        lr_schedule: str = "cosine",
         # Sampling params for epoch-end generation
         sampling_timesteps: int = 256,
         score_temp: float = 0.9,
@@ -104,6 +106,7 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         self.freeze_layers = freeze_layers or []
         self.gradient_checkpointing = gradient_checkpointing
         self.training_mode = training_mode
+        self.lr_schedule = lr_schedule
         self.sampling_timesteps = sampling_timesteps
         self.score_temp = score_temp
         self.guidance_scale = guidance_scale
@@ -424,8 +427,7 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         self.log("val/loss", losses["loss"], prog_bar=True, sync_dist=True)
 
     def configure_optimizers(self) -> dict:
-        """AdamW with linear warmup + cosine decay. Excludes frozen layers."""
-        # Collect trainable parameters only
+        """AdamW with linear warmup + cosine or linear decay."""
         params = [p for p in self.parameters() if p.requires_grad]
 
         optimizer = torch.optim.AdamW(
@@ -435,14 +437,15 @@ class PlaidXSumTrainingModule(pl.LightningModule):
             betas=self.betas,
         )
 
-        # Linear warmup + cosine decay
         def lr_lambda(step: int) -> float:
             if step < self.warmup_steps:
                 return step / max(self.warmup_steps, 1)
-            # Cosine decay after warmup
             total = self.trainer.estimated_stepping_batches
             progress = (step - self.warmup_steps) / max(total - self.warmup_steps, 1)
-            return 0.5 * (1.0 + math.cos(math.pi * progress))
+            if self.lr_schedule == "linear":
+                return 1.0 - progress
+            else:  # cosine
+                return 0.5 * (1.0 + math.cos(math.pi * progress))
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 

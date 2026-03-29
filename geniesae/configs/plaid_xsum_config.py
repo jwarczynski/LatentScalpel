@@ -57,6 +57,7 @@ class PlaidXSumConfig(BaseModel):
     clip_quantile: float = Field(default=0.95, gt=0.0, le=1.0)
     freeze_layers: list[int] | None = None
     num_workers: int = Field(default=4, ge=0)
+    lr_schedule: str = Field(default="cosine", description='"cosine" or "linear"')
 
     # -- Training mode --------------------------------------------------------
     training_mode: str = Field(
@@ -169,6 +170,7 @@ class PlaidXSumConfig(BaseModel):
             freeze_layers=self.freeze_layers,
             gradient_checkpointing=self.gradient_checkpointing,
             training_mode=self.training_mode,
+            lr_schedule=self.lr_schedule,
             # Sampling params for epoch-end generation
             sampling_timesteps=self.sampling_timesteps,
             score_temp=self.score_temp,

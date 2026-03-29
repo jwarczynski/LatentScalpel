@@ -1,0 +1,37 @@
+# Quick 1-GPU smoke test for v2 hyperparams
+weights_path: "models/plaid/plaid1b_weights"
+data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
+seq_len: 512
+max_summary_len: 64
+tokenizer_path: "models/plaid/plaid1b_weights/tokenizer.json"
+batch_size: 2
+learning_rate: 1.0e-5
+weight_decay: 4.0e-5
+betas: [0.9, 0.99]
+num_epochs: 1
+warmup_steps: 5
+bias_warmup_steps: 5
+self_cond_prob: 0.25
+num_workers: 0
+lr_schedule: "linear"
+training_mode: "template"
+strategy: "auto"
+num_gpus: 1
+precision: "bf16-mixed"
+gradient_checkpointing: true
+sampling_timesteps: 16
+num_eval_samples: 2
+use_wandb: false
+log_interval: 5
+output_dir: "./experiments/plaid_xsum_v2_1gpu_test"
+overfit_batches: 10
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_xsum_v2_1gpu_test"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 64
+  timeout_min: 15
+  slurm_partition: plgrid-gpu-a100

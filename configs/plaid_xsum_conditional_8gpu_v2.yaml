@@ -1,0 +1,49 @@
+# Conditional fine-tuning v2: lower lr, original weight_decay, linear schedule
+# lr=1e-5, wd=4e-5, beta2=0.99, linear decay, batch_size=8 (eff=64)
+weights_path: "models/plaid/plaid1b_weights"
+data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
+seq_len: 1024
+max_summary_len: 64
+tokenizer_path: "models/plaid/plaid1b_weights/tokenizer.json"
+
+batch_size: 8
+learning_rate: 1.0e-5
+weight_decay: 4.0e-5
+betas: [0.9, 0.99]
+num_epochs: 30
+warmup_steps: 1000
+bias_warmup_steps: 5000
+target_bias_scale: 1.0
+self_cond_prob: 0.25
+clip_quantile: 0.95
+num_workers: 0
+lr_schedule: "linear"
+
+training_mode: "conditional"
+strategy: "ddp"
+num_gpus: 8
+precision: "bf16-mixed"
+gradient_checkpointing: true
+
+sampling_timesteps: 256
+score_temp: 0.9
+sampler: "inpainting"
+num_eval_samples: 5
+
+use_wandb: true
+wandb_project: "plaid-xsum"
+wandb_run_name: "conditional-8gpu-v2-lr1e5-linear"
+log_interval: 50
+output_dir: "./experiments/plaid_xsum_conditional_v2"
+
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_xsum_conditional_v2"
+  cluster: slurm
+  gpus_per_node: 8
+  tasks_per_node: 8
+  cpus_per_task: 4
+  mem_gb: 320
+  timeout_min: 2800
+  slurm_partition: plgrid-gpu-a100
+  slurm_use_srun: true
