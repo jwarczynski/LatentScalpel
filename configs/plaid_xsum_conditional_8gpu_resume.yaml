@@ -1,0 +1,52 @@
+# Resume conditional training from epoch 30 checkpoint
+# Continue for 10 more epochs (40 total) with lr=1e-7 linear decay
+weights_path: "models/plaid/plaid1b_weights"
+data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
+seq_len: 1024
+max_summary_len: 64
+tokenizer_path: "models/plaid/plaid1b_weights/tokenizer.json"
+
+batch_size: 4
+learning_rate: 1.0e-4
+weight_decay: 0.01
+betas: [0.9, 0.999]
+num_epochs: 40
+warmup_steps: 1000
+bias_warmup_steps: 5000
+target_bias_scale: 1.0
+self_cond_prob: 0.25
+clip_quantile: 0.95
+num_workers: 0
+lr_schedule: "linear"
+resume_lr: 1.0e-7
+
+training_mode: "conditional"
+strategy: "ddp"
+num_gpus: 8
+precision: "bf16-mixed"
+gradient_checkpointing: true
+
+sampling_timesteps: 256
+score_temp: 0.9
+sampler: "inpainting"
+num_eval_samples: 5
+
+use_wandb: true
+wandb_project: "plaid-xsum"
+wandb_run_name: "conditional-8gpu-bugfix-v3-resume"
+wandb_run_id: "h3915d31"
+log_interval: 50
+output_dir: "./experiments/plaid_xsum_conditional_bugfix"
+resume_from: "./experiments/plaid_xsum_conditional_bugfix/checkpoints/conditional-8gpu-bugfix-v3/last.ckpt"
+
+infra:
+  version: "6"
+  folder: "./experiments/cache/plaid_xsum_conditional_bugfix"
+  cluster: slurm
+  gpus_per_node: 8
+  tasks_per_node: 8
+  cpus_per_task: 4
+  mem_gb: 320
+  timeout_min: 2800
+  slurm_partition: plgrid-gpu-a100
+  slurm_use_srun: true

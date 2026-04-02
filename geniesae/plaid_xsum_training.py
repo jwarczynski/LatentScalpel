@@ -76,6 +76,8 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         training_mode: str = "unconditional",
         # LR schedule: "cosine" or "linear"
         lr_schedule: str = "cosine",
+        # Override LR on resume (set to override scheduler state from checkpoint)
+        resume_lr: float | None = None,
         # Sampling params for epoch-end generation
         sampling_timesteps: int = 256,
         score_temp: float = 0.9,
@@ -107,6 +109,7 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         self.gradient_checkpointing = gradient_checkpointing
         self.training_mode = training_mode
         self.lr_schedule = lr_schedule
+        self.resume_lr = resume_lr
         self.sampling_timesteps = sampling_timesteps
         self.score_temp = score_temp
         self.guidance_scale = guidance_scale
@@ -428,16 +431,26 @@ class PlaidXSumTrainingModule(pl.LightningModule):
 
     def configure_optimizers(self) -> dict:
         """AdamW with linear warmup + cosine or linear decay."""
+        effective_lr = self.resume_lr if self.resume_lr is not None else self.learning_rate
         params = [p for p in self.parameters() if p.requires_grad]
 
         optimizer = torch.optim.AdamW(
             params,
-            lr=self.learning_rate,
+            lr=effective_lr,
             weight_decay=self.weight_decay,
             betas=self.betas,
         )
 
         def lr_lambda(step: int) -> float:
+            # When resuming with resume_lr, skip warmup (already warmed up)
+            if self.resume_lr is not None:
+                total = self.trainer.estimated_stepping_batches
+                progress = step / max(total, 1)
+                if self.lr_schedule == "linear":
+                    return 1.0 - progress
+                else:
+                    return 0.5 * (1.0 + math.cos(math.pi * progress))
+            # Normal: warmup then decay
             if step < self.warmup_steps:
                 return step / max(self.warmup_steps, 1)
             total = self.trainer.estimated_stepping_batches

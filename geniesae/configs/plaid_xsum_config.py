@@ -58,6 +58,10 @@ class PlaidXSumConfig(BaseModel):
     freeze_layers: list[int] | None = None
     num_workers: int = Field(default=4, ge=0)
     lr_schedule: str = Field(default="cosine", description='"cosine" or "linear"')
+    resume_lr: float | None = Field(
+        default=None,
+        description="Override LR on resume. Skips warmup, decays from this value.",
+    )
 
     # -- Training mode --------------------------------------------------------
     training_mode: str = Field(
@@ -171,6 +175,7 @@ class PlaidXSumConfig(BaseModel):
             gradient_checkpointing=self.gradient_checkpointing,
             training_mode=self.training_mode,
             lr_schedule=self.lr_schedule,
+            resume_lr=self.resume_lr,
             # Sampling params for epoch-end generation
             sampling_timesteps=self.sampling_timesteps,
             score_temp=self.score_temp,
