@@ -1,5 +1,5 @@
-# Resume conditional training from epoch 30 checkpoint
-# Continue for 10 more epochs (40 total) with lr=1e-7 linear decay
+# Resume conditional-8gpu-v2-lr1e5-linear from epoch 30 to 40
+# lr starts at 1e-7 and decays linearly
 weights_path: "models/plaid/plaid1b_weights"
 data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
 seq_len: 1024
@@ -7,9 +7,9 @@ max_summary_len: 64
 tokenizer_path: "models/plaid/plaid1b_weights/tokenizer.json"
 
 batch_size: 4
-learning_rate: 1.0e-4
-weight_decay: 0.01
-betas: [0.9, 0.999]
+learning_rate: 1.0e-5
+weight_decay: 4.0e-5
+betas: [0.9, 0.99]
 num_epochs: 40
 warmup_steps: 1000
 bias_warmup_steps: 5000
@@ -33,15 +33,15 @@ num_eval_samples: 5
 
 use_wandb: true
 wandb_project: "plaid-xsum"
-wandb_run_name: "conditional-8gpu-bugfix-v3-resume"
-wandb_run_id: "h3915d31"
+wandb_run_name: "conditional-8gpu-v2-lr1e5-linear"
+wandb_run_id: "5gepdez9"
 log_interval: 50
-output_dir: "./experiments/plaid_xsum_conditional_bugfix"
-resume_from: "./experiments/plaid_xsum_conditional_bugfix/checkpoints/conditional-8gpu-bugfix-v3/last.ckpt"
+output_dir: "./experiments/plaid_xsum_conditional_v2"
+resume_from: "./experiments/plaid_xsum_conditional_v2/checkpoints/conditional-8gpu-v2-lr1e5-linear/last-v1.ckpt"
 
 infra:
-  version: "6"
-  folder: "./experiments/cache/plaid_xsum_conditional_bugfix"
+  version: "3"
+  folder: "./experiments/cache/plaid_xsum_conditional_v2"
   cluster: slurm
   gpus_per_node: 8
   tasks_per_node: 8
