@@ -19,6 +19,24 @@ def __getattr__(name):
     if name == "SAELightningModule":
         from geniesae.sae_lightning import SAELightningModule
         return SAELightningModule
+    if name == "TemporalClassifier":
+        from geniesae.temporal_classifier import TemporalClassifier
+        return TemporalClassifier
+    if name == "TemporalProfile":
+        from geniesae.temporal_classifier import TemporalProfile
+        return TemporalProfile
+    if name == "FeatureInterventionPatcher":
+        from geniesae.feature_intervention import FeatureInterventionPatcher
+        return FeatureInterventionPatcher
+    if name == "ScheduleModifier":
+        from geniesae.schedule_modifier import ScheduleModifier
+        return ScheduleModifier
+    if name == "InterventionConfig":
+        from geniesae.configs.intervention_config import InterventionConfig
+        return InterventionConfig
+    if name == "ScheduleExperimentConfig":
+        from geniesae.configs.schedule_experiment_config import ScheduleExperimentConfig
+        return ScheduleExperimentConfig
     raise AttributeError(f"module 'geniesae' has no attribute {name!r}")
 
 __all__ = [
@@ -28,4 +46,10 @@ __all__ = [
     "EvaluationConfig",
     "TopKSAE",
     "SAELightningModule",
+    "TemporalClassifier",
+    "TemporalProfile",
+    "FeatureInterventionPatcher",
+    "ScheduleModifier",
+    "InterventionConfig",
+    "ScheduleExperimentConfig",
 ]

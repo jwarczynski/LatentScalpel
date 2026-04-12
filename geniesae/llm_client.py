@@ -109,15 +109,26 @@ class LLMClient:
         max_tokens: int,
         temperature: float,
     ) -> list[str]:
-        """Run batched inference via vllm.LLM.chat()."""
+        """Run truly batched inference via vllm.LLM.generate().
+
+        Applies the chat template manually and calls generate() which
+        processes all prompts in a single GPU pass, unlike chat() which
+        iterates sequentially.
+        """
         from vllm import SamplingParams
 
         sampling_params = SamplingParams(
             max_tokens=max_tokens,
             temperature=temperature,
         )
-        outputs = self._llm.chat(
-            messages=prompts,
-            sampling_params=sampling_params,
-        )
+
+        tokenizer = self._llm.get_tokenizer()
+        formatted = [
+            tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=True,
+            )
+            for msgs in prompts
+        ]
+
+        outputs = self._llm.generate(formatted, sampling_params=sampling_params)
         return [output.outputs[0].text for output in outputs]

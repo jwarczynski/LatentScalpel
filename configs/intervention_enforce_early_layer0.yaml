@@ -1,0 +1,66 @@
+# =============================================================================
+# Feature Intervention: Enforce midpoint features early — Layer 0
+# =============================================================================
+# Enforces midpoint_exclusive features at NDS=500 (early) for layer 0.
+#
+# Run:
+#   uv run python main.py run-intervention configs/intervention_enforce_early_layer0.yaml
+#
+# Submit to Slurm:
+#   uv run python main.py run-intervention configs/intervention_enforce_early_layer0.yaml \
+#       --submit --infra.cluster=slurm
+# =============================================================================
+
+# -- Model --------------------------------------------------------------------
+model_type: "genie"
+model_checkpoint_path: "models/genie/GENIE_ckpt-XSum"
+model_arch: "s2s_CAT"
+in_channel: 128
+model_channels: 128
+out_channel: 128
+vocab_size: 30522
+config_name: "bert-base-uncased"
+logits_mode: 1
+init_pretrained: false
+token_emb_type: "random"
+learn_sigma: false
+fix_encoder: false
+
+# -- SAE ---------------------------------------------------------------------
+sae_checkpoint_dir: "./experiments/sae_checkpoints/genie"
+layer: 0
+
+# -- Intervention -------------------------------------------------------------
+feature_selection: "auto"
+classification_json_path: "./experiments/results/genie/classification_layer0.json"
+target_magnitude: 5.0
+intervention_nds_values: [500]
+
+# -- Diffusion ----------------------------------------------------------------
+diffusion_steps: 2000
+noise_schedule: "sqrt"
+
+# -- Dataset ------------------------------------------------------------------
+dataset_name: "xsum"
+dataset_split: "validation"
+max_samples: 100
+batch_size: 8
+
+# -- Output -------------------------------------------------------------------
+num_text_examples: 10
+loss_log_interval: 100
+output_path: "./experiments/results/genie/intervention_enforce_early_layer0.json"
+
+# -- Device -------------------------------------------------------------------
+device: "cuda:0"
+
+# -- Exca infra ---------------------------------------------------------------
+infra:
+  version: "1"
+  folder: "./experiments/cache/intervention_enforce_early_layer0"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 32
+  timeout_min: 60
+  slurm_partition: plgrid-gpu-a100

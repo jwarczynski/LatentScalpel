@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+.pytest_cache
+experiments
+docs
+.hypothesis
+saescope/

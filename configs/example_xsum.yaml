@@ -20,7 +20,7 @@
 # "model_dict" key. Raw state dicts are also supported.
 # If you accidentally extracted the .pt archive, you can point this at the
 # extracted directory (it should contain data.pkl and data/).
-model_checkpoint_path: "GENIE_ckpt-XSum"
+model_checkpoint_path: "models/genie/GENIE_ckpt-XSum"
 
 # Model architecture: "transformer" for unconditional Diffusion_LM,
 # "s2s_CAT" for CrossAttention_Diffusion_LM (used for XSum summarisation).

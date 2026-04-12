@@ -29,7 +29,7 @@ num_samples: 10
 output_dir: "./experiments/plaid_xsum/token_guidance_bugfix_test"
 
 infra:
-  version: "2"
+  version: "3"
   folder: "./experiments/cache/plaid_token_guidance_bugfix_test"
   cluster: slurm
   gpus_per_node: 1

@@ -1,5 +1,5 @@
 # Activation collection for XSum validation split
-model_checkpoint_path: "GENIE_ckpt-XSum"
+model_checkpoint_path: "models/genie/GENIE_ckpt-XSum"
 model_arch: "s2s_CAT"
 in_channel: 128
 model_channels: 128
@@ -21,7 +21,7 @@ noise_schedule: "sqrt"
 diffusion_timesteps: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
 
 batch_size: 16
-output_dir: "./experiments/activations/xsum/validation"
+output_dir: "./experiments/activations/genie/xsum/validation"
 force_overwrite: false
 device: "cuda:0"
 random_seed: 42
