@@ -120,6 +120,7 @@ class PlaidXSumTrainingModule(pl.LightningModule):
         self.tokenizer_path = tokenizer_path
         self.sample_log_every_n_epochs = sample_log_every_n_epochs
         self._tokenizer = None  # lazy-loaded
+        self._val_predictions: list[list] = []  # accumulated wandb table rows
 
         # Build PLAID modules
         self.diffusion_model = DiffusionModel(dim, embed_dim, n_blocks, n_heads, vocab_size).float()
@@ -401,19 +402,6 @@ class PlaidXSumTrainingModule(pl.LightningModule):
             self.log("train/bias_scale", self._bias_scale, sync_dist=True)
             self.log("train/lr", self.optimizers().param_groups[0]["lr"], sync_dist=True)
 
-            # Throughput
-            now = time.time()
-            elapsed = now - self._step_time
-            if elapsed > 0:
-                throughput = batch["token_ids"].shape[0] / elapsed
-                self.log("train/throughput", throughput, sync_dist=True)
-            self._step_time = now
-
-            # GPU memory
-            if torch.cuda.is_available():
-                mem_mb = torch.cuda.memory_allocated() / 1e6
-                self.log("train/gpu_memory_mb", mem_mb, sync_dist=True)
-
         return losses["loss"]
 
     def on_train_batch_start(self, batch: Any, batch_idx: int) -> None:
@@ -477,9 +465,6 @@ class PlaidXSumTrainingModule(pl.LightningModule):
             return
         if self.trainer.sanity_checking:
             return
-
-        # Log noise schedule curve
-        self._log_noise_schedule()
 
         # Generate and log text samples (only on rank 0, every N epochs)
         if self.global_rank == 0 and (self.current_epoch + 1) % self.sample_log_every_n_epochs == 0:
@@ -588,46 +573,17 @@ class PlaidXSumTrainingModule(pl.LightningModule):
                 i + 1, epoch, article_text, ref_text, gen_text,
             )
 
-        # Log to wandb as a Table
-        if self.logger is not None:
-            try:
-                import wandb
-
-                table = wandb.Table(
-                    columns=["epoch", "idx", "article", "reference", "generated"],
-                    data=[
-                        [epoch, i, r["article"], r["reference"], r["generated"]]
-                        for i, r in enumerate(rows)
-                    ],
+        # Log to wandb as a single accumulated table
+        if self.logger is not None and hasattr(self.logger, "log_table"):
+            for i, r in enumerate(rows):
+                self._val_predictions.append(
+                    [epoch, i, r["article"], r["reference"], r["generated"]]
                 )
-                self.logger.experiment.log(
-                    {f"val/generated_samples_epoch_{epoch}": table},
-                    step=self.global_step,
+            try:
+                self.logger.log_table(
+                    "val/generated_samples",
+                    columns=["epoch", "idx", "article", "reference", "generated"],
+                    data=self._val_predictions,
                 )
             except Exception as e:
                 logger.warning("Failed to log wandb table: %s", e)
-
-    def _log_noise_schedule(self) -> None:
-        """Log the learned noise schedule gamma(t) curve."""
-        if self.logger is None:
-            return
-        try:
-            import wandb
-
-            t_vals = torch.linspace(0, 1, 100, device=self.device, dtype=torch.float64)
-            with torch.no_grad():
-                gamma_vals = self._get_gamma(t_vals).cpu().numpy()
-            t_np = t_vals.cpu().numpy()
-
-            table = wandb.Table(
-                data=[[float(t), float(g)] for t, g in zip(t_np, gamma_vals)],
-                columns=["t", "gamma"],
-            )
-            self.logger.experiment.log(
-                {"noise_schedule/gamma_curve": wandb.plot.line(
-                    table, "t", "gamma", title="Noise Schedule γ(t)"
-                )},
-                step=self.global_step,
-            )
-        except Exception:
-            pass  # WandB not available or logging failed
