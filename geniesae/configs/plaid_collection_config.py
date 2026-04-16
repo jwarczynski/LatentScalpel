@@ -34,6 +34,13 @@ class PlaidCollectionConfig(BaseModel):
 
     # -- Model ----------------------------------------------------------------
     weights_path: str = Field(min_length=1, description="Directory with PLAID .pt weight files")
+    checkpoint_path: str | None = Field(
+        default=None,
+        description=(
+            "Path to a Lightning .ckpt file from fine-tuning. "
+            "When set, loads model from checkpoint instead of weights_path."
+        ),
+    )
     dim: int = Field(default=2048, gt=0)
     embed_dim: int = Field(default=16, gt=0)
     n_blocks: int = Field(default=24, gt=0)
@@ -59,6 +66,17 @@ class PlaidCollectionConfig(BaseModel):
         ),
     )
     seq_len: int = Field(default=256, gt=0)
+    tokenizer_path: str | None = Field(
+        default=None,
+        description="Path to PLAID tokenizer JSON. Required when using xsum data_dir.",
+    )
+    data_dir: str | None = Field(
+        default=None,
+        description=(
+            "Path to XSum data directory with .src/.tgt files. "
+            "When set, loads XSum data instead of HuggingFace dataset."
+        ),
+    )
 
     # -- Diffusion sampling ---------------------------------------------------
     # Continuous t values in [0, 1] at which to collect activations
@@ -111,50 +129,92 @@ class PlaidCollectionConfig(BaseModel):
 
         # -- Load model -------------------------------------------------------
         print("[PlaidCollection] Loading PLAID model...", flush=True)
-        modules = load_plaid_modules(
-            self.weights_path,
-            dim=self.dim, embed_dim=self.embed_dim,
-            n_blocks=self.n_blocks, n_heads=self.n_heads,
-            vocab_size=self.vocab_size,
-            gamma_0=self.gamma_0, gamma_1=self.gamma_1,
-            device=str(device),
-        )
-        model = modules["model"]
-        embedding_matrix_module = modules["embedding_matrix"]
-        noise_schedule = modules["noise_schedule"]
-        gamma_bounds = modules["gamma_bounds"]
+        if self.checkpoint_path is not None:
+            # Load from fine-tuned Lightning checkpoint
+            from geniesae.plaid_xsum_training import PlaidXSumTrainingModule
+            ckpt_module = PlaidXSumTrainingModule.load_from_checkpoint(
+                self.checkpoint_path, map_location=device
+            )
+            ckpt_module.eval()
+            ckpt_module.to(device)
+            model = ckpt_module.diffusion_model
+            embedding_matrix_module = ckpt_module.embedding_matrix
+            noise_schedule = ckpt_module.noise_schedule
+            gamma_bounds = ckpt_module.gamma_bounds
+            print(f"[PlaidCollection] Loaded fine-tuned checkpoint: {self.checkpoint_path}", flush=True)
+        else:
+            modules = load_plaid_modules(
+                self.weights_path,
+                dim=self.dim, embed_dim=self.embed_dim,
+                n_blocks=self.n_blocks, n_heads=self.n_heads,
+                vocab_size=self.vocab_size,
+                gamma_0=self.gamma_0, gamma_1=self.gamma_1,
+                device=str(device),
+            )
+            model = modules["model"]
+            embedding_matrix_module = modules["embedding_matrix"]
+            noise_schedule = modules["noise_schedule"]
+            gamma_bounds = modules["gamma_bounds"]
 
         # -- Load dataset -----------------------------------------------------
         print(f"[PlaidCollection] Loading dataset {self.dataset_name}...", flush=True)
-        from datasets import load_dataset as hf_load_dataset
-        from transformers import AutoTokenizer
 
-        tokenizer = AutoTokenizer.from_pretrained("gpt2")
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
+        if self.data_dir is not None:
+            # Load XSum data using PLAID tokenizer
+            from tokenizers import Tokenizer as HFTokenizer
+            tok_path = self.tokenizer_path or "models/plaid/plaid1b_weights/tokenizer.json"
+            plaid_tokenizer = HFTokenizer.from_file(tok_path)
 
-        # Stream to avoid loading full 8M-row dataset into RAM
-        ds = hf_load_dataset(
-            self.dataset_name, split=self.dataset_split,
-            streaming=True,
-        )
-        texts: list[str] = []
-        target = self.skip_samples + self.max_samples
-        for i, row in enumerate(ds):
-            if i >= target:
-                break
-            if i < self.skip_samples:
-                continue
-            texts.append(row["text"])
-        num_texts = len(texts)
-        print(f"[PlaidCollection] Loaded {num_texts} samples via streaming", flush=True)
+            data_path = Path(self.data_dir)
+            split_prefix = {"train": "train", "validation": "dev", "test": "test"}
+            src_file = data_path / f"{split_prefix.get(self.dataset_split, self.dataset_split)}.src"
+            src_lines = src_file.read_text().strip().split("\n")
 
-        encodings = tokenizer(
-            texts, padding="max_length", truncation=True,
-            max_length=self.seq_len, return_tensors="pt",
-        )
-        input_ids_all = encodings["input_ids"]
-        del texts, encodings
+            if self.skip_samples > 0:
+                src_lines = src_lines[self.skip_samples:]
+            src_lines = src_lines[:self.max_samples]
+            num_texts = len(src_lines)
+            print(f"[PlaidCollection] Loaded {num_texts} XSum samples from {src_file}", flush=True)
+
+            # Tokenize with PLAID tokenizer, pad/truncate to seq_len
+            all_ids = []
+            for line in src_lines:
+                ids = plaid_tokenizer.encode(line).ids[:self.seq_len]
+                # Pad with 0 (EOT token)
+                ids = ids + [0] * (self.seq_len - len(ids))
+                all_ids.append(ids)
+            input_ids_all = torch.tensor(all_ids, dtype=torch.long)
+            del src_lines, all_ids
+        else:
+            from datasets import load_dataset as hf_load_dataset
+            from transformers import AutoTokenizer
+
+            tokenizer = AutoTokenizer.from_pretrained("gpt2")
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+
+            ds = hf_load_dataset(
+                self.dataset_name, split=self.dataset_split,
+                streaming=True,
+            )
+            texts: list[str] = []
+            target = self.skip_samples + self.max_samples
+            for i, row in enumerate(ds):
+                if i >= target:
+                    break
+                if i < self.skip_samples:
+                    continue
+                texts.append(row["text"])
+            num_texts = len(texts)
+            print(f"[PlaidCollection] Loaded {num_texts} samples via streaming", flush=True)
+
+            encodings = tokenizer(
+                texts, padding="max_length", truncation=True,
+                max_length=self.seq_len, return_tensors="pt",
+            )
+            input_ids_all = encodings["input_ids"]
+            del texts, encodings
+
         gc.collect()
 
         # -- Set up forward hooks (lightweight, no computation graph) ----------

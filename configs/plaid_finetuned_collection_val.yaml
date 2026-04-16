@@ -1,0 +1,45 @@
+# =============================================================================
+# Activation Collection — Fine-tuned PLAID v3b (cond-256-lr1e6-cosine-100ep)
+# =============================================================================
+# Collects activations from the fine-tuned model on XSum validation split.
+# Uses 6 layers (2 early, 2 mid, 2 late) and 10 noise levels matching
+# the GENIE setup for comparable analysis.
+#
+# Submit:
+#   uv run python main.py collect-plaid-activations \
+#       configs/plaid_finetuned_collection_val.yaml --submit
+
+# -- Model (loaded from fine-tuned checkpoint) --------------------------------
+weights_path: "models/plaid/plaid1b_weights"
+checkpoint_path: "experiments/plaid_xsum_v3b/checkpoints/cond-256-lr1e6-cosine-100ep/best-epoch85.ckpt"
+
+# -- Dataset (XSum validation) ------------------------------------------------
+dataset_name: "xsum"
+dataset_split: "validation"
+data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
+tokenizer_path: "models/plaid/plaid1b_weights/tokenizer.json"
+max_samples: 3000
+seq_len: 256
+
+# -- Diffusion sampling (10 noise levels, matching GENIE's 10 timesteps) ------
+diffusion_t_values: [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95]
+
+# -- Collection ---------------------------------------------------------------
+batch_size: 4
+output_dir: "./experiments/activations/plaid_finetuned_v3b/xsum/validation"
+force_overwrite: false
+device: "cuda:0"
+random_seed: 42
+# 2 early (0, 4), 2 mid (10, 14), 2 late (20, 23)
+layers: [0, 4, 10, 14, 20, 23]
+
+# -- Exca infra ---------------------------------------------------------------
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_finetuned_v3b_collection_val"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 128
+  timeout_min: 720
+  slurm_partition: plgrid-gpu-a100
