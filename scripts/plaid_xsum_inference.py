@@ -45,6 +45,9 @@ def main():
     parser.add_argument("--score_temp", type=float, default=0.9)
     parser.add_argument("--prefix_mode", type=str, default="renoised",
                         choices=["clean", "renoised"])
+    parser.add_argument("--split", type=str, default="validate",
+                        choices=["validate", "test"],
+                        help="Which split to generate from")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -84,10 +87,15 @@ def main():
         num_workers=0,
         tokenizer_path=args.tokenizer_path,
     )
-    dm.setup("validate")
-    val_dataset = dm.val_dataset
-    assert val_dataset is not None, "No validation dataset found"
-    print(f"Validation set: {len(val_dataset)} examples")
+    dm.setup(args.split)
+    if args.split == "test":
+        dataset = dm.test_dataset
+        split_name = "test"
+    else:
+        dataset = dm.val_dataset
+        split_name = "dev"
+    assert dataset is not None, f"No {split_name} dataset found"
+    print(f"{split_name.capitalize()} set: {len(dataset)} examples")
 
     # Resolve SEP token ID
     sep_id = dm.sep_token_id
@@ -99,8 +107,8 @@ def main():
           f"temp={args.score_temp}, prefix_mode={args.prefix_mode})")
     print(f"{'='*80}\n")
 
-    for i in range(min(args.num_samples, len(val_dataset))):
-        sample = val_dataset[i]
+    for i in range(min(args.num_samples, len(dataset))):
+        sample = dataset[i]
         token_ids = sample["token_ids"].unsqueeze(0).to(device)      # (1, seq_len)
         boundary_idx = sample["boundary_idx"].unsqueeze(0).to(device) # (1,)
         attention_mask = sample["attention_mask"].unsqueeze(0).to(device)
@@ -141,7 +149,7 @@ def main():
         gen_summary_text = tokenizer.decode(gen_summary_clean) if gen_summary_clean else "(empty)"
 
         print(f"--- Example {i+1} (generated in {gen_time:.1f}s) ---")
-        print(f"ARTICLE (first 200 chars): {article_text[:200]}...")
+        print(f"ARTICLE: {article_text}")
         print(f"REFERENCE: {ref_summary_text}")
         print(f"GENERATED: {gen_summary_text}")
         print()
