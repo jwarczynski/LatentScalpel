@@ -1,0 +1,74 @@
+# =============================================================================
+# SAE Training — Fine-tuned PLAID v3b
+# =============================================================================
+# Trains Top-K SAEs on activations from the fine-tuned PLAID model.
+#
+# Single layer:
+#   uv run python main.py train-sae configs/train_sae_plaid_finetuned_v3b.yaml --layer_idx=0
+#
+# All 6 layers (Slurm job array):
+#   uv run python main.py train-sae configs/train_sae_plaid_finetuned_v3b.yaml \
+#       --layers 0 4 10 14 20 23 --submit --infra.cluster=slurm
+
+# -- Input (validation split activations) ------------------------------------
+activation_dir: "./experiments/activations/plaid_finetuned_v3b/xsum/validation"
+val_activation_dir: null
+test_activation_dir: null
+
+# -- Layer selection ----------------------------------------------------------
+layer_idx: 0
+
+# -- SAE architecture (PLAID dim=2048) ----------------------------------------
+expansion_factor: 16
+k_target: 64
+k_start_multiplier: 4.0
+k_anneal_fraction: 0.1
+
+# -- Training -----------------------------------------------------------------
+learning_rate: 0.0003
+batch_size: 4096
+max_epochs: 15
+
+# -- Dead feature handling ----------------------------------------------------
+dead_feature_window: 1000000
+resample_dead_features: true
+dead_feature_strategy: "resample"
+
+# -- Sample limit -------------------------------------------------------------
+max_samples: 5000000
+
+# -- DataLoader ---------------------------------------------------------------
+num_workers: 0
+persistent_workers: false
+pin_memory: true
+matmul_precision: "high"
+
+# -- Checkpoint ---------------------------------------------------------------
+resume_from: null
+save_best: true
+monitor_metric: "train/mse"
+monitor_mode: "min"
+
+# -- Hardware -----------------------------------------------------------------
+num_gpus: 1
+strategy: "auto"
+
+# -- Logging ------------------------------------------------------------------
+wandb_project: "plaid-sae-finetuned"
+wandb_run_name: null
+use_wandb: true
+
+# -- Output -------------------------------------------------------------------
+output_dir: "./experiments/sae_checkpoints/plaid_finetuned_v3b"
+random_seed: 42
+
+# -- Exca infra ---------------------------------------------------------------
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_finetuned_v3b_sae_training"
+  cluster: null
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 128
+  timeout_min: 2800
+  slurm_partition: plgrid-gpu-a100
