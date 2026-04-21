@@ -1,0 +1,54 @@
+# =============================================================================
+# Feature Interpretation — Fine-tuned PLAID v3b
+# =============================================================================
+# Uses vLLM to generate natural-language descriptions of SAE features.
+# Override --top_examples_path and --output_path per layer.
+#
+# Submit one per layer:
+#   for L in 0 4 10 14 20 23; do
+#     LSTR=$(printf "%02d" $L)
+#     uv run python main.py interpret-features \
+#         configs/interpret_features_plaid_finetuned_v3b.yaml \
+#         --top_examples_path=./experiments/top_examples/plaid_finetuned_v3b/layer_${LSTR}_top_examples.json \
+#         --output_path=./experiments/results/plaid_finetuned_v3b/interpretation_layer_${LSTR}.json \
+#         --submit --infra.cluster=slurm
+#   done
+
+# -- Input (override per layer) -----------------------------------------------
+top_examples_path: "./experiments/top_examples/plaid_finetuned_v3b/layer_00_top_examples.json"
+
+# -- LLM ----------------------------------------------------------------------
+llm_model: "Qwen/Qwen2.5-32B-Instruct-AWQ"
+vllm_kwargs:
+  quantization: "awq_marlin"
+  enforce_eager: true
+  max_model_len: 32768
+  gpu_memory_utilization: 0.92
+batch_size: 32
+temperature: 0.0
+
+# -- Scoring ------------------------------------------------------------------
+num_scoring_examples: 10
+max_tokens_explanation: 256
+max_tokens_scoring: 128
+max_doc_chars: 500
+
+# -- Features -----------------------------------------------------------------
+features: null
+
+# -- XSum local data ----------------------------------------------------------
+data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
+
+# -- Output (override per layer) ----------------------------------------------
+output_path: "./experiments/results/plaid_finetuned_v3b/interpretation_layer_00.json"
+
+# -- Exca infra ---------------------------------------------------------------
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_finetuned_v3b_interpret"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 128
+  timeout_min: 480
+  slurm_partition: plgrid-gpu-a100

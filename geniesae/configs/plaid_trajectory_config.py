@@ -30,6 +30,10 @@ class PlaidTrajectoryConfig(BaseModel):
 
     # -- Model ----------------------------------------------------------------
     weights_path: str = Field(min_length=1)
+    checkpoint_path: str | None = Field(
+        default=None,
+        description="Path to Lightning .ckpt (fine-tuned). Overrides weights_path.",
+    )
     dim: int = Field(default=2048, gt=0)
     embed_dim: int = Field(default=16, gt=0)
     n_blocks: int = Field(default=24, gt=0)
@@ -44,12 +48,17 @@ class PlaidTrajectoryConfig(BaseModel):
 
     # -- Dataset --------------------------------------------------------------
     dataset_name: str = "openwebtext"
-    # NOTE: openwebtext only has a "train" split. For trajectory analysis we
-    # should ideally use a held-out set — use skip_samples to carve out a
-    # disjoint slice.
     dataset_split: str = "train"
     max_samples: int = Field(default=50, gt=0)
     seq_len: int = Field(default=256, gt=0)
+    data_dir: str | None = Field(
+        default=None,
+        description="Path to XSum .src/.tgt dir. When set, uses XSum instead of HF dataset.",
+    )
+    tokenizer_path: str | None = Field(
+        default=None,
+        description="PLAID tokenizer path. Required with data_dir.",
+    )
 
     # -- Diffusion ------------------------------------------------------------
     # NOTE: Standardised to 256 steps to match plaid_evaluation and other
@@ -92,14 +101,29 @@ class PlaidTrajectoryConfig(BaseModel):
 
         # -- Load model -------------------------------------------------------
         print("[PlaidTrajectory] Loading PLAID model...", flush=True)
-        modules = load_plaid_modules(
-            self.weights_path,
-            dim=self.dim, embed_dim=self.embed_dim,
-            n_blocks=self.n_blocks, n_heads=self.n_heads,
-            vocab_size=self.vocab_size,
-            gamma_0=self.gamma_0, gamma_1=self.gamma_1,
-            device=str(device),
-        )
+        if self.checkpoint_path is not None:
+            from geniesae.plaid_xsum_training import PlaidXSumTrainingModule
+            ckpt_module = PlaidXSumTrainingModule.load_from_checkpoint(
+                self.checkpoint_path, map_location=device,
+            )
+            ckpt_module.eval()
+            ckpt_module.to(device)
+            modules = {
+                "model": ckpt_module.diffusion_model,
+                "embedding_matrix": ckpt_module.embedding_matrix,
+                "noise_schedule": ckpt_module.noise_schedule,
+                "gamma_bounds": ckpt_module.gamma_bounds,
+            }
+            print(f"[PlaidTrajectory] Loaded fine-tuned checkpoint: {self.checkpoint_path}", flush=True)
+        else:
+            modules = load_plaid_modules(
+                self.weights_path,
+                dim=self.dim, embed_dim=self.embed_dim,
+                n_blocks=self.n_blocks, n_heads=self.n_heads,
+                vocab_size=self.vocab_size,
+                gamma_0=self.gamma_0, gamma_1=self.gamma_1,
+                device=str(device),
+            )
         model = modules["model"]
         diffusion = PlaidDiffusionHelper(modules, self.sampling_timesteps, self.score_temp)
         nnsight_model = nnsight.NNsight(model)
@@ -121,21 +145,42 @@ class PlaidTrajectoryConfig(BaseModel):
 
         # -- Load dataset -----------------------------------------------------
         print(f"[PlaidTrajectory] Loading dataset...", flush=True)
-        tokenizer = AutoTokenizer.from_pretrained("gpt2")
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
 
-        ds = load_dataset(self.dataset_name, split=self.dataset_split, trust_remote_code=True)
-        if self.max_samples < len(ds):
-            ds = ds.select(range(self.max_samples))
+        if self.data_dir is not None:
+            from tokenizers import Tokenizer as HFTokenizer
+            tok_path = self.tokenizer_path or "models/plaid/plaid1b_weights/tokenizer.json"
+            plaid_tokenizer = HFTokenizer.from_file(tok_path)
 
-        text_key = "text" if "text" in ds.column_names else ds.column_names[0]
-        texts = list(ds[text_key])
-        encodings = tokenizer(
-            texts, padding="max_length", truncation=True,
-            max_length=self.seq_len, return_tensors="pt",
-        )
-        input_ids_all = encodings["input_ids"]
+            data_path = Path(self.data_dir)
+            split_prefix = {"train": "train", "validation": "dev", "test": "test"}
+            src_file = data_path / f"{split_prefix.get(self.dataset_split, self.dataset_split)}.src"
+            src_lines = src_file.read_text().strip().split("\n")
+            if self.max_samples < len(src_lines):
+                src_lines = src_lines[:self.max_samples]
+
+            all_ids = []
+            for line in src_lines:
+                ids = plaid_tokenizer.encode(line).ids[:self.seq_len]
+                ids = ids + [0] * (self.seq_len - len(ids))
+                all_ids.append(ids)
+            input_ids_all = torch.tensor(all_ids, dtype=torch.long)
+            texts = src_lines
+        else:
+            tokenizer = AutoTokenizer.from_pretrained("gpt2")
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+
+            ds = load_dataset(self.dataset_name, split=self.dataset_split, trust_remote_code=True)
+            if self.max_samples < len(ds):
+                ds = ds.select(range(self.max_samples))
+
+            text_key = "text" if "text" in ds.column_names else ds.column_names[0]
+            texts = list(ds[text_key])
+            encodings = tokenizer(
+                texts, padding="max_length", truncation=True,
+                max_length=self.seq_len, return_tensors="pt",
+            )
+            input_ids_all = encodings["input_ids"]
 
         # -- Determine timesteps to sample ------------------------------------
         all_steps = list(range(self.sampling_timesteps))

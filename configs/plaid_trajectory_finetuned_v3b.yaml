@@ -1,0 +1,48 @@
+# =============================================================================
+# Trajectory Collection — Fine-tuned PLAID v3b
+# =============================================================================
+# Runs the full denoising trajectory with the fine-tuned model and records
+# SAE feature activations at each step.
+#
+# Submit:
+#   uv run python main.py collect-plaid-trajectory \
+#       configs/plaid_trajectory_finetuned_v3b.yaml --submit
+
+# -- Model (loaded from fine-tuned checkpoint) --------------------------------
+weights_path: "models/plaid/plaid1b_weights"
+checkpoint_path: "experiments/plaid_xsum_v3b/checkpoints/cond-256-lr1e6-cosine-100ep/best-epoch85.ckpt"
+
+# -- SAE ----------------------------------------------------------------------
+sae_checkpoint_dir: "./experiments/sae_checkpoints/plaid_finetuned_v3b"
+layers: [0, 4, 10, 14, 20, 23]
+
+# -- Dataset (XSum validation) ------------------------------------------------
+dataset_name: "xsum"
+dataset_split: "validation"
+data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
+tokenizer_path: "models/plaid/plaid1b_weights/tokenizer.json"
+max_samples: 50
+seq_len: 256
+
+# -- Diffusion ----------------------------------------------------------------
+sampling_timesteps: 256
+score_temp: 0.9
+timestep_subsample: 1
+
+# -- Collection ---------------------------------------------------------------
+batch_size: 2
+top_k_to_record: 64
+device: "cuda:0"
+random_seed: 42
+output_path: "./experiments/results/plaid_finetuned_v3b/trajectory_features.json"
+
+# -- Exca infra ---------------------------------------------------------------
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_finetuned_v3b_trajectory"
+  cluster: slurm
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 64
+  timeout_min: 480
+  slurm_partition: plgrid-gpu-a100

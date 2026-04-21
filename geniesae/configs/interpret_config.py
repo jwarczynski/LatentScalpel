@@ -79,6 +79,13 @@ class InterpretFeaturesConfig(BaseModel):
         description="Path to trajectory JSON. When provided, temporal classification "
                     "and timing data are included in LLM prompts.",
     )
+    data_dir: str | None = Field(
+        default=None,
+        description=(
+            "Path to local XSum dir with .src files. When set, loads documents "
+            "from <split>.src (dev.src for validation) instead of HuggingFace."
+        ),
+    )
     infra: exca.TaskInfra = exca.TaskInfra(version="1")
 
     _exclude_from_cls_uid: tp.ClassVar[tuple[str, ...]] = (
@@ -135,7 +142,14 @@ class InterpretFeaturesConfig(BaseModel):
             f"(split={dataset_split})",
             flush=True,
         )
-        dataset = load_dataset(dataset_name, split=dataset_split)
+        if self.data_dir is not None:
+            split_prefix = {"train": "train", "validation": "dev", "test": "test"}
+            src_file = Path(self.data_dir) / f"{split_prefix.get(dataset_split, dataset_split)}.src"
+            src_lines = src_file.read_text().strip().split("\n")
+            dataset = [{"document": line} for line in src_lines]
+            print(f"[InterpretFeatures] Loaded {len(dataset)} local XSum docs from {src_file}", flush=True)
+        else:
+            dataset = load_dataset(dataset_name, split=dataset_split)
 
         # ------------------------------------------------------------------
         # 3. Initialize LLM client
