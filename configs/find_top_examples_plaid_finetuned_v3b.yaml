@@ -1,0 +1,44 @@
+# =============================================================================
+# Find Top Examples — Fine-tuned PLAID v3b
+# =============================================================================
+# Finds top-activating examples for each SAE feature across all 6 layers.
+#
+# Submit all layers as job array:
+#   uv run python main.py find-top-examples \
+#       configs/find_top_examples_plaid_finetuned_v3b.yaml \
+#       --submit --infra.cluster=slurm
+
+# -- Input --------------------------------------------------------------------
+sae_checkpoint_path: "./experiments/sae_checkpoints/plaid_finetuned_v3b/layer_00.ckpt"
+activation_dir: "./experiments/activations/plaid_finetuned_v3b/xsum/validation"
+layer_idx: 0
+
+# -- Dataset ------------------------------------------------------------------
+dataset_name: "xsum"
+dataset_split: "validation"
+
+# -- Top-K selection ----------------------------------------------------------
+top_k: 30
+unique_examples: true
+
+# -- Filtering ----------------------------------------------------------------
+features: null
+timesteps: null
+
+# -- Output -------------------------------------------------------------------
+output_dir: "./experiments/top_examples/plaid_finetuned_v3b"
+
+# -- Hardware -----------------------------------------------------------------
+device: "cuda:0"
+batch_size: 4096
+
+# -- Exca infra ---------------------------------------------------------------
+infra:
+  version: "1"
+  folder: "./experiments/cache/plaid_finetuned_v3b_top_examples"
+  cluster: null
+  gpus_per_node: 1
+  cpus_per_task: 4
+  mem_gb: 64
+  timeout_min: 120
+  slurm_partition: plgrid-gpu-a100
