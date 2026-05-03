@@ -10,10 +10,10 @@
 #   uv run python main.py train-sae configs/train_sae_plaid_finetuned_v3b.yaml \
 #       --layers 0 4 10 14 20 23 --submit --infra.cluster=slurm
 
-# -- Input (validation split activations) ------------------------------------
-activation_dir: "./experiments/activations/plaid_finetuned_v3b/xsum/validation"
-val_activation_dir: null
-test_activation_dir: null
+# -- Input --------------------------------------------------------------------
+activation_dir: "./experiments/activations/plaid_finetuned_v3b/xsum/train"
+val_activation_dir: "./experiments/activations/plaid_finetuned_v3b/xsum/validation"
+test_activation_dir: "./experiments/activations/plaid_finetuned_v3b/xsum/test"
 
 # -- Layer selection ----------------------------------------------------------
 layer_idx: 0
@@ -46,7 +46,7 @@ matmul_precision: "high"
 # -- Checkpoint ---------------------------------------------------------------
 resume_from: null
 save_best: true
-monitor_metric: "train/mse"
+monitor_metric: "val/mse"
 monitor_mode: "min"
 
 # -- Hardware -----------------------------------------------------------------
@@ -64,7 +64,7 @@ random_seed: 42
 
 # -- Exca infra ---------------------------------------------------------------
 infra:
-  version: "1"
+  version: "2"
   folder: "./experiments/cache/plaid_finetuned_v3b_sae_training"
   cluster: null
   gpus_per_node: 1
