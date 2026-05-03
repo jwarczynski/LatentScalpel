@@ -63,6 +63,13 @@ class SAETrainingConfig(BaseModel):
     k_target: int = Field(default=32, gt=0)
     k_start_multiplier: float = Field(default=4.0, gt=0)
     k_anneal_fraction: float = Field(default=0.1, gt=0)
+    normalize_inputs: bool = Field(
+        default=False,
+        description=(
+            "Normalize inputs to zero mean, unit variance using statistics "
+            "computed from the train activations. Recommended for PLAID."
+        ),
+    )
 
     learning_rate: float = Field(default=1e-4, gt=0)
     batch_size: int = Field(default=4096, gt=0)
@@ -265,6 +272,11 @@ class SAETrainingConfig(BaseModel):
         print(f"[SAETraining] Computing data mean for layer {self.layer_idx}...", flush=True)
         data_mean = store.compute_layer_mean(self.layer_idx, max_samples=self.max_samples)
 
+        data_std: torch.Tensor | None = None
+        if self.normalize_inputs:
+            print(f"[SAETraining] Computing data std for layer {self.layer_idx}...", flush=True)
+            data_std = store.compute_layer_std(self.layer_idx, max_samples=self.max_samples)
+
         # --- Model ---
         sae = TopKSAE(activation_dim, dictionary_size, self.k_target)
         sae.initialize_from_data(data_mean)
@@ -283,6 +295,9 @@ class SAETrainingConfig(BaseModel):
             resample_dead=self.resample_dead_features,
             dead_feature_strategy=self.dead_feature_strategy,
             aux_loss_coeff=self.aux_loss_coeff,
+            normalize_inputs=self.normalize_inputs,
+            input_mean=data_mean if self.normalize_inputs else None,
+            input_std=data_std,
         )
 
         # --- Logger ---

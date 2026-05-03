@@ -19,10 +19,15 @@ test_activation_dir: "./experiments/activations/plaid_finetuned_v3b/xsum/test"
 layer_idx: 0
 
 # -- SAE architecture (PLAID dim=2048) ----------------------------------------
-expansion_factor: 16
+# dim=2048, expansion=8 -> dictionary=16384
+# Reduced from 16 for more training signal per feature.
+expansion_factor: 8
 k_target: 64
-k_start_multiplier: 4.0
+# Disable k-warmup: train with target k from the start.
+k_start_multiplier: 1.0
 k_anneal_fraction: 0.1
+# Normalize activations (zero mean, unit variance) before encoding.
+normalize_inputs: true
 
 # -- Training -----------------------------------------------------------------
 learning_rate: 0.0003
@@ -35,7 +40,8 @@ resample_dead_features: true
 dead_feature_strategy: "resample"
 
 # -- Sample limit -------------------------------------------------------------
-max_samples: 5000000
+# 153M train activations available; use 50M for much more per-feature signal.
+max_samples: 50000000
 
 # -- DataLoader ---------------------------------------------------------------
 num_workers: 0
@@ -64,7 +70,7 @@ random_seed: 42
 
 # -- Exca infra ---------------------------------------------------------------
 infra:
-  version: "2"
+  version: "3"
   folder: "./experiments/cache/plaid_finetuned_v3b_sae_training"
   cluster: null
   gpus_per_node: 1

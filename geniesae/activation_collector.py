@@ -422,6 +422,56 @@ class ActivationStore:
         print(f"[compute_mean] cached to {cache_path}", flush=True)
         return result
 
+    def compute_layer_std(
+        self, layer_idx: int, *, max_samples: int | None = None,
+    ) -> torch.Tensor:
+        """Compute the per-dim std of activations for a layer.
+
+        Uses Welford's online algorithm in a single pass (cached like mean).
+        """
+        layer_dir = self._base_dir / f"layer_{layer_idx:02d}"
+        if max_samples is not None:
+            cache_name = f"std_{max_samples // 1000}k.pt"
+        else:
+            cache_name = "std.pt"
+        cache_path = layer_dir / cache_name
+
+        if cache_path.exists():
+            print(f"[compute_std] loading cached std from {cache_path}", flush=True)
+            return torch.load(cache_path, map_location="cpu", weights_only=True)
+
+        ds = self.get_chunked_dataset(
+            layer_idx, shuffle=False, max_samples=max_samples,
+        )
+        # Welford's online algorithm for numerical stability
+        n = 0
+        mean: torch.Tensor | None = None
+        m2: torch.Tensor | None = None
+        for sample in ds:
+            x = sample.to(torch.float64)
+            n += 1
+            if mean is None:
+                mean = torch.zeros_like(x)
+                m2 = torch.zeros_like(x)
+            delta = x - mean
+            mean += delta / n
+            delta2 = x - mean
+            m2 += delta * delta2
+            if n % 500_000 == 0:
+                print(f"[compute_std] {n} samples processed", flush=True)
+
+        if mean is None:
+            raise RuntimeError(f"No data found for layer {layer_idx}")
+        variance = m2 / max(n - 1, 1)
+        result = variance.sqrt().float()
+        print(f"[compute_std] done: {n} samples", flush=True)
+
+        layer_dir.mkdir(parents=True, exist_ok=True)
+        torch.save(result, cache_path)
+        print(f"[compute_std] cached to {cache_path}", flush=True)
+        return result
+
+
     @property
     def num_layers(self) -> int:
         return int(self.metadata["num_layers"])

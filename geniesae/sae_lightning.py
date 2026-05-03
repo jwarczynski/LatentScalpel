@@ -40,6 +40,9 @@ class SAELightningModule(L.LightningModule):
         resample_dead: bool = True,
         dead_feature_strategy: str = "none",
         aux_loss_coeff: float = 1e-3,
+        normalize_inputs: bool = False,
+        input_mean: torch.Tensor | None = None,
+        input_std: torch.Tensor | None = None,
     ) -> None:
         super().__init__()
         self.sae = sae
@@ -51,8 +54,17 @@ class SAELightningModule(L.LightningModule):
         self.resample_dead = resample_dead
         self.dead_feature_strategy = dead_feature_strategy
         self.aux_loss_coeff = aux_loss_coeff
+        self.normalize_inputs = normalize_inputs
 
-        self.save_hyperparameters(ignore=["sae"])
+        self.save_hyperparameters(ignore=["sae", "input_mean", "input_std"])
+
+        # Normalization buffers (registered even when unused so ckpts load)
+        if input_mean is None:
+            input_mean = torch.zeros(sae.activation_dim)
+        if input_std is None:
+            input_std = torch.ones(sae.activation_dim)
+        self.register_buffer("input_mean", input_mean.float())
+        self.register_buffer("input_std", input_std.float().clamp(min=1e-6))
 
         # Dead feature tracking buffers
         self.register_buffer(
@@ -68,13 +80,19 @@ class SAELightningModule(L.LightningModule):
         self._resample_batch: torch.Tensor | None = None
         self._pending_resample_mask: torch.Tensor | None = None
 
+    def _maybe_normalize(self, x: torch.Tensor) -> torch.Tensor:
+        if self.normalize_inputs:
+            return (x - self.input_mean) / self.input_std
+        return x
+
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
-        x = batch
+        x = self._maybe_normalize(batch)
         x_hat, z = self.sae(x)
         loss = F.mse_loss(x_hat, x)
 
         # Compute metrics
         l0 = (z != 0).float().sum(dim=-1).mean()
+        active_any = (z != 0).any(dim=0).float().mean()
 
         # Fraction of Variance Explained
         x_mean = x.mean(dim=0, keepdim=True)
@@ -85,6 +103,7 @@ class SAELightningModule(L.LightningModule):
         self.log("train/mse_loss", loss, prog_bar=True)
         self.log("train/fve", fve, prog_bar=True)
         self.log("train/l0_sparsity", l0)
+        self.log("train/active_feat_frac", active_any)
 
         # Update dead feature tracking — accumulate first, then report
         # and reset only when the window is full.
@@ -210,7 +229,7 @@ class SAELightningModule(L.LightningModule):
             self.sae.set_k(self.k_target)
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
-        x = batch
+        x = self._maybe_normalize(batch)
         x_hat, z = self.sae(x)
         mse = F.mse_loss(x_hat, x)
 
@@ -220,11 +239,16 @@ class SAELightningModule(L.LightningModule):
         ss_tot = (x - x_mean).pow(2).sum()
         fve = 1.0 - ss_res / ss_tot.clamp(min=1e-8)
 
+        l0 = (z != 0).float().sum(dim=-1).mean()
+        active_any = (z != 0).any(dim=0).float().mean()
+
         self.log("val/fve", fve, prog_bar=True)
         self.log("val/mse", mse)
+        self.log("val/l0_sparsity", l0)
+        self.log("val/active_feat_frac", active_any)
 
     def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
-        x = batch
+        x = self._maybe_normalize(batch)
         x_hat, z = self.sae(x)
         mse = F.mse_loss(x_hat, x)
 
@@ -234,10 +258,12 @@ class SAELightningModule(L.LightningModule):
         fve = 1.0 - ss_res / ss_tot.clamp(min=1e-8)
 
         l0 = (z != 0).float().sum(dim=-1).mean()
+        active_any = (z != 0).any(dim=0).float().mean()
 
         self.log("test/fve", fve)
         self.log("test/mse", mse)
         self.log("test/l0_sparsity", l0)
+        self.log("test/active_feat_frac", active_any)
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.sae.parameters(), lr=self.learning_rate)
@@ -276,6 +302,7 @@ class SAELightningModule(L.LightningModule):
         module = cls(sae=sae, **hparams)
         # Drop legacy b_enc from old checkpoints (removed in TopK SAE fix)
         state_dict = {k: v for k, v in state_dict.items() if k != "sae.b_enc"}
-        module.load_state_dict(state_dict)
+        # Allow loading older checkpoints without input_mean/input_std buffers
+        module.load_state_dict(state_dict, strict=False)
         return module
 
