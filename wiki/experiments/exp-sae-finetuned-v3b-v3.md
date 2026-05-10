@@ -1,12 +1,12 @@
 ---
-tags: [experiment, sae, plaid, finetuned, current]
-status: running
+tags: [experiment, sae, plaid, finetuned, done]
+status: done
 date: 2026-05-03
 slurm_job: 2559832
-related: [[bug-sae-stuck-loss]] [[decision-sae-hyperparams]]
+related: [[bug-sae-stuck-loss]] [[decision-sae-hyperparams]] [[exp-sae-finetuned-v3b-v4]]
 ---
 
-# Exp: SAEs on fine-tuned v3b — v3 (current)
+# Exp: SAEs on fine-tuned v3b — v3
 
 Third attempt. Fixes all issues from v1 and v2: proper 3-split, plus normalization + no k-warmup + smaller expansion + more data.
 
@@ -50,27 +50,37 @@ Commit ``92a7752``:
 
 ## Slurm
 
-Job array 2559832 — 6 tasks (one per layer). Submitted 2026-05-03 11:04.
+Job array 2559832 — 6 tasks (one per layer). Submitted 2026-05-03 11:04. All completed by ~14:15.
 
 ## Wandb
 
-Project: `plaid-sae-finetuned`. New runs named per layer. Monitor metrics:
+Project: `plaid-sae-finetuned`. One run per layer.
 
-- `train/mse_loss` — should spike then decrease.
-- `train/fve` — should climb to 0.7–0.9.
-- `train/active_feat_frac` — should be in [0.3, 0.8].
-- `val/mse`, `val/fve` — should track train.
+| Layer | wandb run       | train MSE | val MSE | val FVE | dead frac | active feat frac (val) |
+|-------|-----------------|-----------|---------|---------|-----------|------------------------|
+| 00    | hejbmbm6        | 0.006     | 1.71    | **−4.83** | 0.20    | 0.03                   |
+| 04    | 743yhy6q        | 0.106     | 0.90    | **−0.34** | 0.82    | 0.44                   |
+| 10    | kmen6rxk        | 0.220     | 0.38    | 0.50    | 0.54      | 0.45                   |
+| 14    | a1pxff8x        | 0.330     | 0.38    | 0.51    | 0.55      | 0.41                   |
+| 20    | n9kgatc0        | 0.354     | 0.32    | **0.63** | 0.32    | 0.43                   |
+| 23    | bv9d07xr        | 0.369     | 0.48    | 0.28    | 0.59      | 0.43                   |
 
-## What to do if it still doesn't work
+## Results interpretation
 
-See [[bug-sae-stuck-loss]] "What to watch next" section. Next fallbacks:
-- Increase `k_target` to 128 or 256 (current 64 might be too sparse for 2048-dim).
-- Increase `learning_rate` to 1e-3.
-- Check `data_mean` and `data_std` values — if std is near-zero in some dims, normalization divides by ~0 and produces huge inputs. Clamp `input_std.clamp(min=1e-3)` to be safe.
+Three tiers:
 
-## Next stages after SAE completes
+- **Usable (layers 10, 14, 20):** val FVE ≥ 0.5, moderate dead fraction, active feature fractions in healthy range. Layer 20 is the best (val FVE 0.63). Proceed with downstream analysis using these layers.
+- **Marginal (layer 23):** val FVE 0.28 is below GENIE-era baselines but features fire. Worth collecting top examples to see if anything meaningful emerges.
+- **Failed (layers 00, 04):** huge train/val gap. Layer 00 is near-noise features (1% activation, massive overfit). Layer 04 memorizes train but is worse than the mean on val/test. These layers overfit because the input distribution at early layers is closer to raw embeddings — the model has not yet built a generalizable representation.
 
-1. Re-run find-top-examples on **test** activations (not val, not train) — proper held-out set.
-2. Re-run trajectory collection with new SAEs.
-3. Re-run interpretation on new top-examples.
-4. Compare feature quality vs v1 interpretations.
+Hypothesis: early layers (0, 4) encode token identity which is very high-entropy and low-structure, so a TopK SAE with k=64 cannot compress the diversity without overfitting. Later layers (20) have built task-relevant structure that compresses well.
+
+## Next steps
+
+- **Downstream analysis on layers 10, 14, 20**, then optionally 23 for comparison.
+  - `find-top-examples` on test split
+  - `trajectory` collection
+  - `interpret` with vLLM
+- **For layers 0 and 4**, skip downstream. Optionally try a v4 for these with reduced expansion (e.g., 4) or larger k (128, 256) to see if FVE recovers.
+- **Important**: use the `*_best.ckpt` versions (from step ~5k–10k) rather than the final epoch checkpoints — val monitor is MSE, which catches overfitting early.
+

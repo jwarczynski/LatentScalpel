@@ -131,17 +131,65 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
         print(f"Evaluation complete. Baseline loss: {results['baseline_loss']}")
 
 
+def _resolve_sae_ckpt_for_layer(ckpt_path: str, layer_idx: int) -> str:
+    """Given a checkpoint path templated for one layer, return path for `layer_idx`.
+
+    Rewrites the substring ``layer_NN`` (two-digit zero-padded) to the target
+    layer.  If the path does not contain ``layer_NN`` the original path is
+    returned unchanged (caller is expected to handle / warn).
+    """
+    import re
+
+    return re.sub(r"layer_\d{2}", f"layer_{layer_idx:02d}", ckpt_path)
+
+
+def _submit_top_examples_job_array(base_config, layers: list[int]) -> None:
+    """Submit a Slurm job array — one job per layer via exca's job_array.
+
+    For each layer, rewrites ``sae_checkpoint_path`` (replacing the
+    ``layer_NN`` template) and sets ``layer_idx``.
+    """
+    with base_config.infra.job_array() as array:
+        for layer_idx in layers:
+            overrides: dict = {
+                "layer_idx": layer_idx,
+                "sae_checkpoint_path": _resolve_sae_ckpt_for_layer(
+                    base_config.sae_checkpoint_path, layer_idx,
+                ),
+            }
+            task = base_config.infra.clone_obj(overrides)
+            array.append(task)
+    print(f"Submitted find-top-examples job array for layers {layers}")
+    for task in array:
+        print(
+            f"  layer {task.layer_idx}: ckpt={task.sae_checkpoint_path} "
+            f"status={task.infra.status()}"
+        )
+
+
 def cmd_find_top_examples(args: argparse.Namespace) -> None:
     from geniesae.configs import TopExamplesConfig
 
     data = _load_config_dict(args.config, args.overrides)
     if args.features:
         data["features"] = args.features
-    config = TopExamplesConfig(**data)
+    layers = getattr(args, "layers", None)
 
-    if args.submit:
+    if args.submit and layers:
+        base_config = TopExamplesConfig(**{**data, "layer_idx": layers[0]})
+        base_config = base_config.model_copy(
+            update={
+                "sae_checkpoint_path": _resolve_sae_ckpt_for_layer(
+                    base_config.sae_checkpoint_path, layers[0],
+                ),
+            }
+        )
+        _submit_top_examples_job_array(base_config, layers)
+    elif args.submit:
+        config = TopExamplesConfig(**data)
         config.infra.job()
     else:
+        config = TopExamplesConfig(**data)
         config.apply()
 
 
@@ -400,6 +448,12 @@ def main() -> None:
     p_top.add_argument(
         "--features", type=int, nargs="+", default=None,
         help="Feature indices to process (default: all features)",
+    )
+    p_top.add_argument(
+        "--layers", type=int, nargs="+", default=None,
+        help="Layer indices to process as a Slurm job array (used with --submit). "
+             "Example: --layers 0 10 14 20. The config's sae_checkpoint_path "
+             "must follow the layer_NN template; it is rewritten per-layer.",
     )
     p_top.set_defaults(func=cmd_find_top_examples)
 
