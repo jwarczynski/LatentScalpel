@@ -1,6 +1,6 @@
 ---
 tags: [meta, roadmap]
-last_updated: 2026-05-03
+last_updated: 2026-05-10
 ---
 
 # Roadmap
@@ -9,25 +9,33 @@ Active and upcoming work, rough priority order.
 
 ## Active
 
-### Waiting on SAE v3 training (job 2559832)
+### Top-examples v3 running (job array 2579629)
 
-Watching wandb for loss curves. Diagnostics for action in [[exp-sae-finetuned-v3b-v3]]:
-- If loss decreases smoothly → proceed to next stages.
-- If loss is still flat → try larger k (128 or 256) or higher lr (1e-3).
+Submitted 2026-05-10 18:36. Four jobs on A100 nodes, ~2h timeout.
+- Layer 10 (2579629_0), Layer 14 (2579629_1), Layer 20 (2579629_2), Layer 23 (2579629_3).
+- Output: `experiments/top_examples/plaid_finetuned_v3b_v3/layer_XX_top_examples.json`.
+- Uses v3 `_best-v1` checkpoints (expansion=8, normalize_inputs=true).
+- Split: **test** (val was used for SAE early stopping).
 
-## Next up (once v3 SAE completes)
+## Next up (once top-examples completes)
 
-1. Re-run `find-top-examples` on **test** split activations (held-out).
-2. Re-run `collect-plaid-trajectory` with new SAEs.
-3. Run `classify_temporal_features.py` on new trajectory.
-4. Re-run interpretation — this time with temporal context (`trajectory_data_path` set in config) for midpoint_exclusive features.
-5. Compare feature quality to v1 interpretations (we expect: more diverse explanations, higher interpretability scores, more obvious topic/syntax features).
+1. Run `collect-plaid-trajectory` with v3 SAEs (test split) — config ready.
+2. Run `classify_temporal_features.py` on new trajectory.
+3. Run interpretation per layer via vLLM — config ready, submit once top-examples done.
+4. Compare feature quality to [[exp-sae-finetuned-v3b-v1]] (v1 had expansion=32 and val split only; v3 has proper 3-split and normalization).
+
+## Decisions recorded in wiki
+
+- Layers 0 and 4 dropped from downstream pipeline. Val FVE < 0 → features overfit train activations. See [[exp-sae-finetuned-v3b-v3]].
+- Layer 20 is the strongest (val FVE 0.63), 10 and 14 also usable (~0.50), 23 marginal (0.28).
+- Pipeline continues only with layers **10, 14, 20, 23**.
 
 ## Pending issues
 
 - **Interpretation jobs hit 8h Slurm timeout** with no partial-result save. Need to add incremental JSON checkpointing inside `InterpretFeaturesConfig.apply()`. See [[interpretation]].
 - **Evaluation metrics not computed for v3b generations**. Either wire up `EvaluationModule` in `plaid_xsum_inference.py` or re-run via `PlaidTokenGuidanceConfig`.
 - **Hallucinations in v3b summaries**. Investigate whether specific SAE features correlate with hallucination — intervention target?
+- **Revisit layers 0 and 4**. v4 could try much larger expansion (=32) or larger k (=256) to see if they can fit.
 
 ## Ideas for future experiments
 

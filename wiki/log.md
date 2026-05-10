@@ -15,6 +15,39 @@ Types: `ingest`, `experiment`, `bug`, `decision`, `lint`, `meta`, `note`.
 
 ---
 
+## [2026-05-10] experiment | Top-examples v3 submitted for usable layers (job 2579629)
+
+Submitted job array for layers 10, 14, 20, 23 on **test split** using v3 `_best-v1` SAE checkpoints. 4 Slurm jobs, 2h timeout each. Output at `experiments/top_examples/plaid_finetuned_v3b_v3/`.
+
+Skipped layers 0 and 4 — their v3 SAEs have val FVE < 0 (overfit).
+
+## [2026-05-10] meta | Wiki moved to workspace root
+
+Moved from `geniesae/wiki/` (inside the package) to `wiki/` (workspace root). Committed and pushed.
+
+## [2026-05-10] note | v3 SAE results reviewed
+
+Ran a week after submission (finished 2026-05-03 14:15). Results:
+
+| Layer | val FVE | dead frac | verdict |
+|-------|---------|-----------|---------|
+| 00    | −4.83   | 0.20      | FAILED  |
+| 04    | −0.34   | 0.82      | FAILED  |
+| 10    | 0.50    | 0.54      | usable  |
+| 14    | 0.51    | 0.55      | usable  |
+| 20    | **0.63** | 0.32    | best    |
+| 23    | 0.28    | 0.59      | marginal |
+
+Downstream pipeline constrained to layers 10/14/20/23.
+
+## [2026-05-10] decision | Add --layers job array support for find-top-examples
+
+Added `--layers` CLI arg to `find-top-examples` command in `main.py` plus a helper that rewrites the `layer_NN` template in `sae_checkpoint_path` per task. Mirrors the existing `cmd_train_sae` pattern.
+
+Also added `sae_checkpoint_suffix` field to `plaid_trajectory_config.py` so configs can pin `_best-v1` instead of the default fallback chain.
+
+---
+
 ## [2026-05-03] meta | Wiki initialized
 
 Bootstrapped the persistent wiki under `GenieSAE/wiki/`. Populated from conversation history, git log, existing `docs/`, configs, and code. See [[index]] for the catalog.
