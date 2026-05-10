@@ -45,6 +45,15 @@ class PlaidTrajectoryConfig(BaseModel):
     # -- SAE ------------------------------------------------------------------
     sae_checkpoint_dir: str = Field(min_length=1)
     layers: list[int] = Field(min_length=1)
+    sae_checkpoint_suffix: str = Field(
+        default="",
+        description=(
+            "Optional suffix appended to layer_XX when resolving SAE "
+            "checkpoints, e.g. '_best-v1' selects layer_XX_best-v1.ckpt. "
+            "Leave empty to try layer_XX.ckpt then fall back to "
+            "layer_XX_best.ckpt."
+        ),
+    )
 
     # -- Dataset --------------------------------------------------------------
     dataset_name: str = "openwebtext"
@@ -132,11 +141,22 @@ class PlaidTrajectoryConfig(BaseModel):
         print(f"[PlaidTrajectory] Loading SAEs for layers {self.layers}...", flush=True)
         saes: dict[int, torch.nn.Module] = {}
         for layer_idx in self.layers:
-            ckpt_path = Path(self.sae_checkpoint_dir) / f"layer_{layer_idx:02d}.ckpt"
-            if not ckpt_path.exists():
-                ckpt_path = Path(self.sae_checkpoint_dir) / f"layer_{layer_idx:02d}_best.ckpt"
-            if not ckpt_path.exists():
-                raise FileNotFoundError(f"No SAE checkpoint for layer {layer_idx}")
+            if self.sae_checkpoint_suffix:
+                ckpt_path = Path(self.sae_checkpoint_dir) / (
+                    f"layer_{layer_idx:02d}{self.sae_checkpoint_suffix}.ckpt"
+                )
+                if not ckpt_path.exists():
+                    raise FileNotFoundError(
+                        f"No SAE checkpoint with suffix "
+                        f"'{self.sae_checkpoint_suffix}' for layer {layer_idx}: "
+                        f"{ckpt_path}"
+                    )
+            else:
+                ckpt_path = Path(self.sae_checkpoint_dir) / f"layer_{layer_idx:02d}.ckpt"
+                if not ckpt_path.exists():
+                    ckpt_path = Path(self.sae_checkpoint_dir) / f"layer_{layer_idx:02d}_best.ckpt"
+                if not ckpt_path.exists():
+                    raise FileNotFoundError(f"No SAE checkpoint for layer {layer_idx}")
             module = SAELightningModule.load_trained(str(ckpt_path), map_location=str(device))
             module.sae.eval()
             module.sae.to(device)

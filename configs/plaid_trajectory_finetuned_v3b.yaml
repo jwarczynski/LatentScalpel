@@ -14,11 +14,15 @@ checkpoint_path: "experiments/plaid_xsum_v3b/checkpoints/cond-256-lr1e6-cosine-1
 
 # -- SAE ----------------------------------------------------------------------
 sae_checkpoint_dir: "./experiments/sae_checkpoints/plaid_finetuned_v3b"
-layers: [0, 4, 10, 14, 20, 23]
+sae_checkpoint_suffix: "_best-v1"   # use v3 best-val-MSE checkpoints
+# NOTE: layers 0 and 4 are excluded — both had val FVE < 0 in v3 SAE training
+# (overfit in early layers where activation distribution is too raw). See
+# wiki/experiments/exp-sae-finetuned-v3b-v3.md for full metrics.
+layers: [10, 14, 20, 23]
 
-# -- Dataset (XSum validation) ------------------------------------------------
+# -- Dataset (XSum test — matching top-examples split policy) -----------------
 dataset_name: "xsum"
-dataset_split: "validation"
+dataset_split: "test"
 data_dir: "datasets/glge-released-dataset/easy/xsum_data/org_data"
 tokenizer_path: "models/plaid/plaid1b_weights/tokenizer.json"
 max_samples: 50
@@ -34,11 +38,11 @@ batch_size: 2
 top_k_to_record: 64
 device: "cuda:0"
 random_seed: 42
-output_path: "./experiments/results/plaid_finetuned_v3b/trajectory_features.json"
+output_path: "./experiments/results/plaid_finetuned_v3b_v3/trajectory_features.json"
 
 # -- Exca infra ---------------------------------------------------------------
 infra:
-  version: "1"
+  version: "2"   # bumped for v3 SAEs + test split
   folder: "./experiments/cache/plaid_finetuned_v3b_trajectory"
   cluster: slurm
   gpus_per_node: 1
